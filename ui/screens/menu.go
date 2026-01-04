@@ -1,0 +1,212 @@
+package screens
+
+import (
+	"fmt"
+	"officina/database"
+	"strings"
+	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+)
+
+// MenuItem rappresenta una voce del menu
+type MenuItem struct {
+	Label string
+	Icon  string
+	State AppState
+}
+
+// MenuModel gestisce il menu principale
+type MenuModel struct {
+	db                *database.DB
+	cursor            int
+	items             []MenuItem
+	width             int
+	height            int
+	todayAppointments int
+	openCommesse      int
+}
+
+// NewMenuModel crea una nuova istanza del menu
+func NewMenuModel(db *database.DB) MenuModel {
+	m := MenuModel{
+		db:     db,
+		cursor: 0,
+		items: []MenuItem{
+			{Label: "Gestione Clienti", Icon: "👥", State: StateClienti},
+			{Label: "Gestione Veicoli", Icon: "🚗", State: StateVeicoli},
+			{Label: "Gestione Commesse", Icon: "🔧", State: StateCommesse},
+			{Label: "Agenda & Appuntamenti", Icon: "📅", State: StateAgenda},
+			{Label: "Prima Nota & Cassa", Icon: "💶", State: StatePrimaNota},
+			{Label: "Operatori", Icon: "👨‍🔧", State: StateOperatori},
+			{Label: "Preventivi", Icon: "💰", State: StatePreventivi},
+			{Label: "Fatture & Ricevute", Icon: "📄", State: StateFatture},
+		},
+	}
+
+	m.RefreshStats()
+	return m
+}
+
+// RefreshStats aggiorna le statistiche del menu
+func (m *MenuModel) RefreshStats() {
+	if m.db == nil {
+		return
+	}
+
+	// Conta appuntamenti di oggi
+	list, _ := m.db.ListAppuntamenti()
+	count := 0
+	today := time.Now().Format("2006-01-02")
+	for _, a := range list {
+		if a.DataOra.Format("2006-01-02") == today {
+			count++
+		}
+	}
+	m.todayAppointments = count
+
+	// Conta commesse aperte
+	commesse, _ := m.db.ListCommesse()
+	openCount := 0
+	for _, c := range commesse {
+		if c.Stato == "Aperta" {
+			openCount++
+		}
+	}
+	m.openCommesse = openCount
+}
+
+// Init implementa tea.Model
+func (m MenuModel) Init() tea.Cmd {
+	return nil
+}
+
+// Update implementa tea.Model
+func (m MenuModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Aggiorna statistiche ad ogni update
+	m.RefreshStats()
+
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		return m, nil
+
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "q", "ctrl+c":
+			return m, tea.Quit
+
+		case "up", "k":
+			if m.cursor > 0 {
+				m.cursor--
+			} else {
+				m.cursor = len(m.items) - 1
+			}
+
+		case "down", "j":
+			if m.cursor < len(m.items)-1 {
+				m.cursor++
+			} else {
+				m.cursor = 0
+			}
+
+		case "enter", " ":
+			target := m.items[m.cursor].State
+			return m, func() tea.Msg { return ChangeScreenMsg(target) }
+		}
+	}
+
+	return m, nil
+}
+
+// View implementa tea.Model
+func (m MenuModel) View() string {
+	width := 70
+	if m.width > 0 {
+		width = min(m.width, 80)
+	}
+
+	// Header
+	header := RenderHeader("MENU PRINCIPALE", width)
+
+	// Statistiche in evidenza
+	var statsBuilder strings.Builder
+	if m.todayAppointments > 0 || m.openCommesse > 0 {
+		statsBuilder.WriteString(lipgloss.NewStyle().
+			Foreground(ColorSubText).
+			Render("📊 Dashboard rapida") + "\n\n")
+
+		if m.todayAppointments > 0 {
+			badge := WarningBadge(fmt.Sprintf(" %d Appuntamenti oggi ", m.todayAppointments))
+			statsBuilder.WriteString("  " + badge + "\n")
+		}
+
+		if m.openCommesse > 0 {
+			badge := InfoBadge(fmt.Sprintf(" %d Commesse aperte ", m.openCommesse))
+			statsBuilder.WriteString("  " + badge + "\n")
+		}
+
+		statsBuilder.WriteString("\n")
+	}
+
+	// Menu items
+	var menuBuilder strings.Builder
+
+	itemWidth := width - 12
+	selectedStyle := SelectedItemStyle.Copy().Width(itemWidth)
+	normalStyle := NormalItemStyle.Copy().Width(itemWidth)
+
+	for i, item := range m.items {
+		// Badge per notifiche
+		badge := ""
+		if item.State == StateAgenda && m.todayAppointments > 0 {
+			badge = lipgloss.NewStyle().
+				Foreground(ColorWarning).
+				Bold(true).
+				Render(fmt.Sprintf(" [%d]", m.todayAppointments))
+		}
+		if item.State == StateCommesse && m.openCommesse > 0 {
+			badge = lipgloss.NewStyle().
+				Foreground(ColorHighlight).
+				Bold(true).
+				Render(fmt.Sprintf(" [%d]", m.openCommesse))
+		}
+
+		label := fmt.Sprintf("%s  %s%s", item.Icon, item.Label, badge)
+
+		if i == m.cursor {
+			menuBuilder.WriteString(selectedStyle.Render("▶ "+label) + "\n")
+		} else {
+			menuBuilder.WriteString(normalStyle.Render("  "+label) + "\n")
+		}
+
+		if i < len(m.items)-1 {
+			menuBuilder.WriteString("\n")
+		}
+	}
+
+	// Footer
+	footer := RenderFooter(width)
+
+	// Composizione finale
+	content := lipgloss.JoinVertical(
+		lipgloss.Left,
+		header,
+		"",
+		statsBuilder.String(),
+		lipgloss.NewStyle().Padding(0, 4).Render(menuBuilder.String()),
+		"",
+		footer,
+	)
+
+	box := MainBoxStyle.Copy().Width(width - 4).Render(content)
+
+	// Centra se dimensioni disponibili
+	if m.width > 0 && m.height > 0 {
+		return CenterContent(m.width, m.height, box)
+	}
+
+	return "\n" + box
+}

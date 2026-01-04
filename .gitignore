@@ -1,0 +1,32 @@
+# Binari
+*.exe
+*.dll
+*.so
+*.dylib
+main
+officina
+
+# Database e log
+*.db
+*.log
+debug.log
+
+# IDE e editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Dipendenze
+vendor/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Cartelle temporanee
+.zencoder/
+.zenflow/
+tmp/
+temp/
