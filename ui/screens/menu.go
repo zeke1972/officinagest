@@ -115,6 +115,13 @@ func (m MenuModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "enter", " ":
 			target := m.items[m.cursor].State
 			return m, func() tea.Msg { return ChangeScreenMsg(target) }
+
+		case "1", "2", "3", "4", "5", "6", "7", "8":
+			num := int(msg.String()[0]-'0') - 1
+			if num >= 0 && num < len(m.items) {
+				target := m.items[num].State
+				return m, func() tea.Msg { return ChangeScreenMsg(target) }
+			}
 		}
 	}
 
@@ -154,10 +161,6 @@ func (m MenuModel) View() string {
 	// Menu items
 	var menuBuilder strings.Builder
 
-	itemWidth := width - 12
-	selectedStyle := SelectedItemStyle.Copy().Width(itemWidth)
-	normalStyle := NormalItemStyle.Copy().Width(itemWidth)
-
 	for i, item := range m.items {
 		// Badge per notifiche
 		badge := ""
@@ -167,6 +170,7 @@ func (m MenuModel) View() string {
 				Bold(true).
 				Render(fmt.Sprintf(" [%d]", m.todayAppointments))
 		}
+
 		if item.State == StateCommesse && m.openCommesse > 0 {
 			badge = lipgloss.NewStyle().
 				Foreground(ColorHighlight).
@@ -174,13 +178,33 @@ func (m MenuModel) View() string {
 				Render(fmt.Sprintf(" [%d]", m.openCommesse))
 		}
 
-		label := fmt.Sprintf("%s  %s%s", item.Icon, item.Label, badge)
-
+		// Stile numero: evidenziato se selezionato
+		var numLabel string
 		if i == m.cursor {
-			menuBuilder.WriteString(selectedStyle.Render("▶ "+label) + "\n")
+			numLabel = lipgloss.NewStyle().
+				Foreground(ColorPrimary).
+				Background(ColorBgLight).
+				Bold(true).
+				Render(fmt.Sprintf("[%d]", i+1))
 		} else {
-			menuBuilder.WriteString(normalStyle.Render("  "+label) + "\n")
+			numLabel = lipgloss.NewStyle().
+				Foreground(ColorSubText).
+				Bold(true).
+				Render(fmt.Sprintf("[%d]", i+1))
 		}
+
+		// Costruisce la riga
+		cursor := "  "
+		if i == m.cursor {
+			cursor = "▶ "
+		}
+
+		label := fmt.Sprintf("%s %s %s%s", numLabel, item.Icon, item.Label, badge)
+		lineStyle := lipgloss.NewStyle().
+			Foreground(ColorText).
+			Padding(0, 1)
+
+		menuBuilder.WriteString(lineStyle.Render(cursor+label) + "\n")
 
 		if i < len(m.items)-1 {
 			menuBuilder.WriteString("\n")

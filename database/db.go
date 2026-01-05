@@ -121,11 +121,74 @@ func (db *DB) UpdateCliente(c *Cliente) error {
 
 func (db *DB) DeleteCliente(id int) error {
 	return db.Update(func(tx *bolt.Tx) error {
-		b := tx.Bucket(BktClienti)
-		if b.Get(itob(id)) == nil {
+		// Verifica esistenza cliente
+		bClienti := tx.Bucket(BktClienti)
+		if bClienti.Get(itob(id)) == nil {
 			return fmt.Errorf("cliente %d non trovato", id)
 		}
-		return b.Delete(itob(id))
+
+		bVeicoli := tx.Bucket(BktVeicoli)
+		bCommesse := tx.Bucket(BktCommesse)
+		bPrimaNota := tx.Bucket(BktPrimaNota)
+
+		// Step 1: Trova tutti i veicoli del cliente
+		var veicoliToDelete []int
+		bVeicoli.ForEach(func(k, v []byte) error {
+			veic, err := FromJSONVeicolo(v)
+			if err == nil && veic.ClienteID == id {
+				veicoliToDelete = append(veicoliToDelete, veic.ID)
+			}
+			return nil
+		})
+
+		// Step 2: Per ogni veicolo, trova le commesse
+		var commesseToDelete []int
+		for _, veicoloID := range veicoliToDelete {
+			bCommesse.ForEach(func(k, v []byte) error {
+				comm, err := FromJSONCommessa(v)
+				if err == nil && comm.VeicoloID == veicoloID {
+					commesseToDelete = append(commesseToDelete, comm.ID)
+				}
+				return nil
+			})
+		}
+
+		// Step 3: Per ogni commessa, elimina i movimenti di prima nota
+		for _, commID := range commesseToDelete {
+			var movimentiToDelete []int
+
+			bPrimaNota.ForEach(func(k, v []byte) error {
+				mov, err := FromJSONMovimentoPrimaNota(v)
+				if err == nil && mov.CommessaID == commID {
+					movimentiToDelete = append(movimentiToDelete, mov.ID)
+				}
+				return nil
+			})
+
+			// Elimina i movimenti
+			for _, movID := range movimentiToDelete {
+				if err := bPrimaNota.Delete(itob(movID)); err != nil {
+					return fmt.Errorf("errore eliminazione movimento %d: %w", movID, err)
+				}
+			}
+		}
+
+		// Step 4: Elimina le commesse
+		for _, commID := range commesseToDelete {
+			if err := bCommesse.Delete(itob(commID)); err != nil {
+				return fmt.Errorf("errore eliminazione commessa %d: %w", commID, err)
+			}
+		}
+
+		// Step 5: Elimina i veicoli
+		for _, veicoloID := range veicoliToDelete {
+			if err := bVeicoli.Delete(itob(veicoloID)); err != nil {
+				return fmt.Errorf("errore eliminazione veicolo %d: %w", veicoloID, err)
+			}
+		}
+
+		// Step 6: Infine elimina il cliente
+		return bClienti.Delete(itob(id))
 	})
 }
 
@@ -195,11 +258,54 @@ func (db *DB) UpdateVeicolo(v *Veicolo) error {
 
 func (db *DB) DeleteVeicolo(id int) error {
 	return db.Update(func(tx *bolt.Tx) error {
-		b := tx.Bucket(BktVeicoli)
-		if b.Get(itob(id)) == nil {
+		// Verifica esistenza veicolo
+		bVeicoli := tx.Bucket(BktVeicoli)
+		if bVeicoli.Get(itob(id)) == nil {
 			return fmt.Errorf("veicolo %d non trovato", id)
 		}
-		return b.Delete(itob(id))
+
+		// Prima elimina tutte le commesse associate (e i loro movimenti)
+		bCommesse := tx.Bucket(BktCommesse)
+		bPrimaNota := tx.Bucket(BktPrimaNota)
+		var commesseToDelete []int
+
+		// Identifica commesse del veicolo
+		bCommesse.ForEach(func(k, v []byte) error {
+			comm, err := FromJSONCommessa(v)
+			if err == nil && comm.VeicoloID == id {
+				commesseToDelete = append(commesseToDelete, comm.ID)
+			}
+			return nil
+		})
+
+		// Per ogni commessa, elimina i movimenti associati
+		for _, commID := range commesseToDelete {
+			var movimentiToDelete []int
+
+			// Trova movimenti della commessa
+			bPrimaNota.ForEach(func(k, v []byte) error {
+				mov, err := FromJSONMovimentoPrimaNota(v)
+				if err == nil && mov.CommessaID == commID {
+					movimentiToDelete = append(movimentiToDelete, mov.ID)
+				}
+				return nil
+			})
+
+			// Elimina i movimenti
+			for _, movID := range movimentiToDelete {
+				if err := bPrimaNota.Delete(itob(movID)); err != nil {
+					return fmt.Errorf("errore eliminazione movimento %d: %w", movID, err)
+				}
+			}
+
+			// Elimina la commessa
+			if err := bCommesse.Delete(itob(commID)); err != nil {
+				return fmt.Errorf("errore eliminazione commessa %d: %w", commID, err)
+			}
+		}
+
+		// Infine elimina il veicolo
+		return bVeicoli.Delete(itob(id))
 	})
 }
 
@@ -282,11 +388,34 @@ func (db *DB) UpdateCommessa(c *Commessa) error {
 
 func (db *DB) DeleteCommessa(id int) error {
 	return db.Update(func(tx *bolt.Tx) error {
-		b := tx.Bucket(BktCommesse)
-		if b.Get(itob(id)) == nil {
+		// Verifica esistenza commessa
+		bCommesse := tx.Bucket(BktCommesse)
+		if bCommesse.Get(itob(id)) == nil {
 			return fmt.Errorf("commessa %d non trovata", id)
 		}
-		return b.Delete(itob(id))
+
+		// Prima elimina tutti i movimenti associati alla commessa
+		bPrimaNota := tx.Bucket(BktPrimaNota)
+		var toDelete []int
+
+		// Identifica tutti i movimenti da eliminare
+		bPrimaNota.ForEach(func(k, v []byte) error {
+			mov, err := FromJSONMovimentoPrimaNota(v)
+			if err == nil && mov.CommessaID == id {
+				toDelete = append(toDelete, mov.ID)
+			}
+			return nil
+		})
+
+		// Elimina i movimenti identificati
+		for _, movID := range toDelete {
+			if err := bPrimaNota.Delete(itob(movID)); err != nil {
+				return fmt.Errorf("errore eliminazione movimento %d: %w", movID, err)
+			}
+		}
+
+		// Poi elimina la commessa
+		return bCommesse.Delete(itob(id))
 	})
 }
 

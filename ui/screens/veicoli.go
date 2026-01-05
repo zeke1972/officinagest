@@ -35,25 +35,28 @@ type VeicoloViewItem struct {
 
 // VeicoliModel gestisce la schermata veicoli
 type VeicoliModel struct {
-	db            *database.DB
-	table         table.Model
-	inputs        []textinput.Model
-	mode          VeicoloMode
-	focusIndex    int
-	selectedID    int
-	clienteID     int
-	clienteInfo   string
-	err           error
-	msg           string
-	width         int
-	height        int
-	selectionMode bool
-	clientTable   table.Model
-	clientFilter  textinput.Model
-	showConfirm   bool
-	deletingID    int
-	viewport      viewport.Model
-	showOverlay   bool
+	db                     *database.DB
+	table                  table.Model
+	inputs                 []textinput.Model
+	mode                   VeicoloMode
+	focusIndex             int
+	selectedID             int
+	clienteID              int
+	clienteInfo            string
+	err                    error
+	msg                    string
+	width                  int
+	height                 int
+	selectionMode          bool
+	clientTable            table.Model
+	clientFilter           textinput.Model
+	showConfirm            bool
+	deletingID             int
+	viewport               viewport.Model
+	showOverlay            bool
+	deleteWarningCommesse  int
+	deleteWarningMovimenti int
+	deleteWarningTotale    float64
 }
 
 // NewVeicoliModel crea una nuova istanza del model veicoli
@@ -66,7 +69,6 @@ func NewVeicoliModel(db *database.DB) VeicoliModel {
 		{Title: "Stato Commessa", Width: 28},
 		{Title: "Proprietario", Width: 20},
 	}
-
 	t := table.New(
 		table.WithColumns(columns),
 		table.WithFocused(true),
@@ -101,7 +103,6 @@ func NewVeicoliModel(db *database.DB) VeicoliModel {
 		{Title: "Nome", Width: 20},
 		{Title: "Telefono", Width: 14},
 	}
-
 	ct := table.New(
 		table.WithColumns(clientCols),
 		table.WithFocused(true),
@@ -140,7 +141,6 @@ func (m *VeicoliModel) Refresh() {
 	commesse, _ := m.db.ListCommesse()
 
 	var viewItems []VeicoloViewItem
-
 	for _, v := range list {
 		var lastOpen time.Time
 		hasOpen := false
@@ -187,7 +187,6 @@ func (m *VeicoliModel) Refresh() {
 	for _, item := range viewItems {
 		v := item.Veicolo
 		prop := "N/D"
-
 		if v.ClienteID > 0 {
 			c, err := m.db.GetCliente(v.ClienteID)
 			if err == nil && c != nil {
@@ -205,6 +204,37 @@ func (m *VeicoliModel) Refresh() {
 	}
 
 	m.table.SetRows(rows)
+}
+
+// countDataForVeicolo conta commesse e movimenti associati a un veicolo
+func (m *VeicoliModel) countDataForVeicolo(veicoloID int) (int, int, float64) {
+	commesse, _ := m.db.ListCommesse()
+	movimenti, _ := m.db.ListMovimenti()
+
+	numCommesse := 0
+	commesseIDs := make(map[int]bool)
+
+	// Conta commesse del veicolo
+	for _, c := range commesse {
+		if c.VeicoloID == veicoloID {
+			numCommesse++
+			commesseIDs[c.ID] = true
+		}
+	}
+
+	// Conta movimenti associati a queste commesse
+	numMovimenti := 0
+	totaleMov := 0.0
+	for _, mov := range movimenti {
+		if commesseIDs[mov.CommessaID] {
+			numMovimenti++
+			if mov.Tipo == "Entrata" {
+				totaleMov += mov.Importo
+			}
+		}
+	}
+
+	return numCommesse, numMovimenti, totaleMov
 }
 
 // updateClientTable aggiorna la tabella clienti con filtro
@@ -239,7 +269,6 @@ func (m *VeicoliModel) resetForm() {
 	for i := range m.inputs {
 		m.inputs[i].SetValue("")
 	}
-
 	m.clienteID = 0
 	m.clienteInfo = "Nessun proprietario"
 	m.focusIndex = 0
@@ -297,7 +326,6 @@ func (m *VeicoliModel) loadHistory(veicoloID int) {
 	})
 
 	v, _ := m.db.GetVeicolo(veicoloID)
-
 	var sb strings.Builder
 
 	// Titolo
@@ -341,10 +369,19 @@ func (m *VeicoliModel) loadHistory(veicoloID int) {
 			sb.WriteString(fmt.Sprintf("💰 Totale: %s\n", utils.FormatEuro(c.Totale)))
 			sb.WriteString(fmt.Sprintf("💵 Versato: %s | Residuo: %s\n",
 				utils.FormatEuro(versato), utils.FormatEuro(residuo)))
-			sb.WriteString(fmt.Sprintf("🔧 Lavori: %s\n", utils.Truncate(c.LavoriEseguiti, 60)))
+
+			// Lavori - lista completa
+			sb.WriteString("🔧 Lavori:\n")
+			lavori := strings.Split(c.LavoriEseguiti, ",")
+			for _, lavoro := range lavori {
+				lavoro = strings.TrimSpace(lavoro)
+				if lavoro != "" {
+					sb.WriteString(fmt.Sprintf("   • %s\n", lavoro))
+				}
+			}
 
 			if c.Note != "" {
-				sb.WriteString(fmt.Sprintf("📝 Note: %s\n", utils.Truncate(c.Note, 60)))
+				sb.WriteString(fmt.Sprintf("📝 Note: %s\n", c.Note))
 			}
 
 			sb.WriteString(lipgloss.NewStyle().
@@ -493,20 +530,25 @@ func (m VeicoliModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						count++
 					}
 				}
-
 				if err := m.db.DeleteVeicolo(m.deletingID); err != nil {
 					m.err = fmt.Errorf("errore eliminazione: %w", err)
 				} else {
-					m.msg = fmt.Sprintf("✓ Veicolo e %d commesse eliminati", count)
+					m.msg = fmt.Sprintf("✓ Veicolo, %d commesse e relativi movimenti eliminati", count)
 				}
 				m.Refresh()
 				m.showConfirm = false
+				m.deleteWarningCommesse = 0
+				m.deleteWarningMovimenti = 0
+				m.deleteWarningTotale = 0
 
 			case "n", "N", "esc":
 				m.showConfirm = false
+				m.deleteWarningCommesse = 0
+				m.deleteWarningMovimenti = 0
+				m.deleteWarningTotale = 0
 			}
-			return m, nil
 		}
+		return m, nil
 	}
 
 	// Gestione ESC
@@ -549,14 +591,21 @@ func (m VeicoliModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if row := m.table.SelectedRow(); len(row) > 0 {
 					id, _ := strconv.Atoi(row[0])
 					m.deletingID = id
+
+					// Conta dati associati
+					numCommesse, numMovimenti, totaleMovimenti := m.countDataForVeicolo(id)
+					m.deleteWarningCommesse = numCommesse
+					m.deleteWarningMovimenti = numMovimenti
+					m.deleteWarningTotale = totaleMovimenti
+
 					m.showConfirm = true
 				}
 				return m, nil
 			}
-
-			m.table, cmd = m.table.Update(msg)
-			return m, cmd
 		}
+
+		m.table, cmd = m.table.Update(msg)
+		return m, cmd
 	}
 
 	// Modalità Form (Add/Edit)
@@ -579,8 +628,8 @@ func (m VeicoliModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.err = err
 						return m, nil
 					}
-					return m, nil
 				}
+				return m, nil
 
 			case "tab", "down":
 				m.focusIndex++
@@ -610,10 +659,59 @@ func (m VeicoliModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for i := 0; i < 3; i++ {
 			m.inputs[i], cmds[i] = m.inputs[i].Update(msg)
 		}
+
 		return m, tea.Batch(cmds...)
 	}
 
 	return m, nil
+}
+
+// renderDeleteConfirmation renderizza il dialog di conferma eliminazione con avviso
+func (m VeicoliModel) renderDeleteConfirmation(width int) string {
+	var message strings.Builder
+
+	v, _ := m.db.GetVeicolo(m.deletingID)
+	targa := "???"
+	modello := "???"
+	if v != nil {
+		targa = v.Targa
+		modello = v.Marca + " " + v.Modello
+	}
+
+	message.WriteString(fmt.Sprintf("⚠️  ELIMINAZIONE VEICOLO #%d\n", m.deletingID))
+	message.WriteString(fmt.Sprintf("%s - %s\n\n", targa, modello))
+
+	if m.deleteWarningCommesse > 0 {
+		message.WriteString(ErrorStyle.Render(fmt.Sprintf(
+			"ATTENZIONE: Questo veicolo ha %d commesse associate!\n\n"+
+				"Eliminando il veicolo verranno eliminate:\n"+
+				"  • %d commesse\n"+
+				"  • %d movimenti di Prima Nota (totale: %s)\n\n"+
+				"TUTTI I DATI VERRANNO PERSI IN MODO PERMANENTE!\n\n",
+			m.deleteWarningCommesse,
+			m.deleteWarningCommesse,
+			m.deleteWarningMovimenti,
+			utils.FormatEuro(m.deleteWarningTotale),
+		)))
+	} else {
+		message.WriteString("Questo veicolo non ha commesse o movimenti associati.\n\n")
+	}
+
+	message.WriteString(WarningStyle.Render("Sei sicuro di voler procedere?\n"))
+	message.WriteString(HelpStyle.Render("\n[Y] Sì, elimina TUTTO • [N/Esc] Annulla"))
+
+	box := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(ColorError).
+		Padding(1, 2).
+		Width(75).
+		Render(message.String())
+
+	if m.width > 0 && m.height > 0 {
+		return CenterContent(m.width, m.height, box)
+	}
+
+	return box
 }
 
 // View implementa tea.Model
@@ -631,9 +729,7 @@ func (m VeicoliModel) View() string {
 			"",
 			HelpStyle.Render("[Esc/H/Q] Chiudi • [↑↓] Scorri"),
 		)
-
 		box := MainBoxStyle.Copy().Width(min(width-4, 80)).Render(content)
-
 		if m.width > 0 && m.height > 0 {
 			return CenterContent(m.width, m.height, box)
 		}
@@ -666,6 +762,11 @@ func (m VeicoliModel) View() string {
 		return box
 	}
 
+	// Dialog conferma eliminazione
+	if m.showConfirm {
+		return m.renderDeleteConfirmation(width)
+	}
+
 	// Titolo dinamico
 	title := "GESTIONE VEICOLI"
 	if m.mode == ModeAdd {
@@ -675,17 +776,9 @@ func (m VeicoliModel) View() string {
 	}
 
 	header := RenderHeader(title, width)
-
 	var body string
 
-	// Dialog conferma eliminazione
-	if m.showConfirm {
-		body = RenderConfirmDialog(
-			fmt.Sprintf("Eliminare il veicolo #%d e tutte le sue commesse?", m.deletingID),
-			width,
-			0,
-		)
-	} else if m.mode == ModeList {
+	if m.mode == ModeList {
 		// Vista lista
 		helpText := lipgloss.NewStyle().
 			MarginBottom(1).
@@ -739,17 +832,14 @@ func (m VeicoliModel) View() string {
 
 		form.WriteString("\n")
 		form.WriteString(HelpStyle.Render("[Tab/↑↓] Naviga • [↵] Salva • [Esc] Annulla"))
-
 		body = form.String()
 	}
 
 	// Footer con messaggi
 	footer := RenderFooter(width)
-
 	if m.err != nil {
 		footer = "\n" + ErrorStyle.Render("✗ "+m.err.Error()) + "\n" + footer
 	}
-
 	if m.msg != "" {
 		footer = "\n" + SuccessStyle.Render(m.msg) + "\n" + footer
 	}

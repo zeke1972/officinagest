@@ -24,18 +24,22 @@ const (
 
 // ClientiModel gestisce la schermata clienti
 type ClientiModel struct {
-	db          *database.DB
-	table       table.Model
-	inputs      []textinput.Model
-	mode        ClienteMode
-	focusIndex  int
-	selectedID  int
-	err         error
-	msg         string
-	width       int
-	height      int
-	showConfirm bool
-	deletingID  int
+	db                     *database.DB
+	table                  table.Model
+	inputs                 []textinput.Model
+	mode                   ClienteMode
+	focusIndex             int
+	selectedID             int
+	err                    error
+	msg                    string
+	width                  int
+	height                 int
+	showConfirm            bool
+	deletingID             int
+	deleteWarningVeicoli   int
+	deleteWarningCommesse  int
+	deleteWarningMovimenti int
+	deleteWarningTotale    float64
 }
 
 // NewClientiModel crea una nuova istanza del model clienti
@@ -48,7 +52,6 @@ func NewClientiModel(db *database.DB) ClientiModel {
 		{Title: "Telefono", Width: 14},
 		{Title: "Email", Width: 25},
 	}
-
 	t := table.New(
 		table.WithColumns(columns),
 		table.WithFocused(true),
@@ -141,12 +144,52 @@ func (m *ClientiModel) Refresh() {
 	m.table.SetRows(rows)
 }
 
+// countDataForCliente conta veicoli, commesse e movimenti associati a un cliente
+func (m *ClientiModel) countDataForCliente(clienteID int) (int, int, int, float64) {
+	veicoli, _ := m.db.ListVeicoli()
+	commesse, _ := m.db.ListCommesse()
+	movimenti, _ := m.db.ListMovimenti()
+
+	// Conta veicoli del cliente
+	numVeicoli := 0
+	veicoliIDs := make(map[int]bool)
+	for _, v := range veicoli {
+		if v.ClienteID == clienteID {
+			numVeicoli++
+			veicoliIDs[v.ID] = true
+		}
+	}
+
+	// Conta commesse dei veicoli del cliente
+	numCommesse := 0
+	commesseIDs := make(map[int]bool)
+	for _, c := range commesse {
+		if veicoliIDs[c.VeicoloID] {
+			numCommesse++
+			commesseIDs[c.ID] = true
+		}
+	}
+
+	// Conta movimenti delle commesse
+	numMovimenti := 0
+	totaleMov := 0.0
+	for _, mov := range movimenti {
+		if commesseIDs[mov.CommessaID] {
+			numMovimenti++
+			if mov.Tipo == "Entrata" {
+				totaleMov += mov.Importo
+			}
+		}
+	}
+
+	return numVeicoli, numCommesse, numMovimenti, totaleMov
+}
+
 // resetForm resetta il form ai valori predefiniti
 func (m *ClientiModel) resetForm() {
 	for i := range m.inputs {
 		m.inputs[i].SetValue("")
 	}
-
 	m.focusIndex = 0
 	m.err = nil
 	m.msg = ""
@@ -284,15 +327,25 @@ func (m ClientiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if err := m.db.DeleteCliente(m.deletingID); err != nil {
 					m.err = fmt.Errorf("errore eliminazione: %w", err)
 				} else {
-					m.msg = "✓ Cliente eliminato con successo"
+					m.msg = fmt.Sprintf("✓ Cliente, %d veicoli, %d commesse e %d movimenti eliminati",
+						m.deleteWarningVeicoli, m.deleteWarningCommesse, m.deleteWarningMovimenti)
 				}
 				m.Refresh()
 				m.showConfirm = false
+				m.deleteWarningVeicoli = 0
+				m.deleteWarningCommesse = 0
+				m.deleteWarningMovimenti = 0
+				m.deleteWarningTotale = 0
+
 			case "n", "N", "esc":
 				m.showConfirm = false
+				m.deleteWarningVeicoli = 0
+				m.deleteWarningCommesse = 0
+				m.deleteWarningMovimenti = 0
+				m.deleteWarningTotale = 0
 			}
-			return m, nil
 		}
+		return m, nil
 	}
 
 	// Gestione ESC
@@ -328,14 +381,22 @@ func (m ClientiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if row := m.table.SelectedRow(); len(row) > 0 {
 					id, _ := strconv.Atoi(row[0])
 					m.deletingID = id
+
+					// Conta dati associati
+					numVeicoli, numCommesse, numMovimenti, totaleMov := m.countDataForCliente(id)
+					m.deleteWarningVeicoli = numVeicoli
+					m.deleteWarningCommesse = numCommesse
+					m.deleteWarningMovimenti = numMovimenti
+					m.deleteWarningTotale = totaleMov
+
 					m.showConfirm = true
 				}
 				return m, nil
 			}
-
-			m.table, cmd = m.table.Update(msg)
-			return m, cmd
 		}
+
+		m.table, cmd = m.table.Update(msg)
+		return m, cmd
 	}
 
 	// Modalità Form (Add/Edit)
@@ -388,10 +449,58 @@ func (m ClientiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for i := range m.inputs {
 			m.inputs[i], cmds[i] = m.inputs[i].Update(msg)
 		}
+
 		return m, tea.Batch(cmds...)
 	}
 
 	return m, nil
+}
+
+// renderDeleteConfirmation renderizza il dialog di conferma eliminazione con avviso
+func (m ClientiModel) renderDeleteConfirmation(width int) string {
+	var message strings.Builder
+
+	c, _ := m.db.GetCliente(m.deletingID)
+	nome := "???"
+	if c != nil {
+		nome = c.Cognome + " " + c.Nome
+	}
+
+	message.WriteString(fmt.Sprintf("⚠️  ELIMINAZIONE CLIENTE #%d\n", m.deletingID))
+	message.WriteString(fmt.Sprintf("%s\n\n", nome))
+
+	if m.deleteWarningVeicoli > 0 || m.deleteWarningCommesse > 0 {
+		message.WriteString(ErrorStyle.Render(fmt.Sprintf(
+			"ATTENZIONE: Questo cliente ha dati associati!\n\n"+
+				"Eliminando il cliente verranno eliminati:\n"+
+				"  • %d veicoli\n"+
+				"  • %d commesse\n"+
+				"  • %d movimenti di Prima Nota (totale: %s)\n\n"+
+				"TUTTI I DATI VERRANNO PERSI IN MODO PERMANENTE!\n\n",
+			m.deleteWarningVeicoli,
+			m.deleteWarningCommesse,
+			m.deleteWarningMovimenti,
+			utils.FormatEuro(m.deleteWarningTotale),
+		)))
+	} else {
+		message.WriteString("Questo cliente non ha veicoli, commesse o movimenti associati.\n\n")
+	}
+
+	message.WriteString(WarningStyle.Render("Sei sicuro di voler procedere?\n"))
+	message.WriteString(HelpStyle.Render("\n[Y] Sì, elimina TUTTO • [N/Esc] Annulla"))
+
+	box := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(ColorError).
+		Padding(1, 2).
+		Width(75).
+		Render(message.String())
+
+	if m.width > 0 && m.height > 0 {
+		return CenterContent(m.width, m.height, box)
+	}
+
+	return box
 }
 
 // View implementa tea.Model
@@ -399,6 +508,11 @@ func (m ClientiModel) View() string {
 	width := 85
 	if m.width > 0 {
 		width = min(m.width, 100)
+	}
+
+	// Dialog conferma eliminazione
+	if m.showConfirm {
+		return m.renderDeleteConfirmation(width)
 	}
 
 	// Titolo dinamico
@@ -410,17 +524,9 @@ func (m ClientiModel) View() string {
 	}
 
 	header := RenderHeader(title, width)
-
 	var body string
 
-	// Dialog conferma eliminazione
-	if m.showConfirm {
-		body = RenderConfirmDialog(
-			fmt.Sprintf("Eliminare il cliente #%d?", m.deletingID),
-			width,
-			0,
-		)
-	} else if m.mode == ClList {
+	if m.mode == ClList {
 		// Vista lista
 		helpText := lipgloss.NewStyle().
 			MarginBottom(1).
@@ -459,17 +565,14 @@ func (m ClientiModel) View() string {
 
 		form.WriteString("\n")
 		form.WriteString(HelpStyle.Render("[Tab/↑↓] Naviga • [↵] Conferma/Prossimo • [Esc] Annulla"))
-
 		body = form.String()
 	}
 
 	// Footer con messaggi
 	footer := RenderFooter(width)
-
 	if m.err != nil {
 		footer = "\n" + ErrorStyle.Render("✗ "+m.err.Error()) + "\n" + footer
 	}
-
 	if m.msg != "" {
 		footer = "\n" + SuccessStyle.Render(m.msg) + "\n" + footer
 	}

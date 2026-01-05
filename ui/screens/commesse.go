@@ -37,7 +37,6 @@ var StandardWorks = []StandardWork{
 	{Code: "MEC-TAG-003", Desc: "Tagliando pre-revisione"},
 	{Code: "MEC-TAG-004", Desc: "Reset spia service"},
 	{Code: "MEC-TAG-005", Desc: "Diagnosi elettronica"},
-
 	// Motore e distribuzione
 	{Code: "MEC-MOT-001", Desc: "Sostituzione cinghia distribuzione"},
 	{Code: "MEC-MOT-002", Desc: "Sostituzione catena distribuzione"},
@@ -47,34 +46,28 @@ var StandardWorks = []StandardWork{
 	{Code: "MEC-MOT-006", Desc: "Pulizia valvola EGR"},
 	{Code: "MEC-MOT-007", Desc: "Rigenerazione DPF"},
 	{Code: "MEC-MOT-008", Desc: "Rifacimento guarnizione testata"},
-
 	// Freni
 	{Code: "MEC-FRE-001", Desc: "Sostituzione pastiglie anteriori"},
 	{Code: "MEC-FRE-002", Desc: "Sostituzione pastiglie posteriori"},
 	{Code: "MEC-FRE-003", Desc: "Sostituzione dischi anteriori"},
 	{Code: "MEC-FRE-004", Desc: "Sostituzione dischi posteriori"},
 	{Code: "MEC-FRE-005", Desc: "Spurgo impianto frenante"},
-
 	// Trasmissione
 	{Code: "MEC-TRA-001", Desc: "Sostituzione frizione"},
 	{Code: "MEC-TRA-002", Desc: "Sostituzione volano"},
 	{Code: "MEC-TRA-003", Desc: "Revisione cambio manuale"},
 	{Code: "MEC-TRA-004", Desc: "Manutenzione cambio automatico"},
-
 	// Carrozzeria
 	{Code: "CAR-STR-001", Desc: "Riparazione post-incidente"},
 	{Code: "CAR-STR-002", Desc: "Raddrizzatura telaio"},
-
 	// Verniciatura
 	{Code: "CAR-VER-001", Desc: "Verniciatura completa"},
 	{Code: "CAR-VER-002", Desc: "Verniciatura paraurti"},
 	{Code: "CAR-VER-003", Desc: "Verniciatura cofano"},
 	{Code: "CAR-VER-004", Desc: "Verniciatura portiera"},
-
 	// Cristalli
 	{Code: "CAR-VET-001", Desc: "Sostituzione parabrezza"},
 	{Code: "CAR-VET-002", Desc: "Riparazione parabrezza"},
-
 	// Detailing
 	{Code: "CAR-DET-001", Desc: "Lucidatura completa"},
 	{Code: "CAR-DET-002", Desc: "Trattamento protettivo nano"},
@@ -82,29 +75,31 @@ var StandardWorks = []StandardWork{
 
 // CommesseModel gestisce la schermata commesse
 type CommesseModel struct {
-	db                  *database.DB
-	table               table.Model
-	inputs              []textinput.Model
-	mode                CommessaMode
-	focusIndex          int
-	selectedID          int
-	err                 error
-	msg                 string
-	width               int
-	height              int
-	selectionMode       bool
-	veicoloTable        table.Model
-	veicoloFilter       textinput.Model
-	selectionModeLavori bool
-	lavoriTable         table.Model
-	lavoriFilter        textinput.Model
-	showLavoriPopup     bool
-	popupLavoriText     string
-	popupTitle          string
-	showConfirm         bool
-	deletingID          int
-	veicoloID           int
-	veicoloInfo         string
+	db                     *database.DB
+	table                  table.Model
+	inputs                 []textinput.Model
+	mode                   CommessaMode
+	focusIndex             int
+	selectedID             int
+	err                    error
+	msg                    string
+	width                  int
+	height                 int
+	selectionMode          bool
+	veicoloTable           table.Model
+	veicoloFilter          textinput.Model
+	selectionModeLavori    bool
+	lavoriTable            table.Model
+	lavoriFilter           textinput.Model
+	showLavoriPopup        bool
+	popupLavoriText        string
+	popupTitle             string
+	showConfirm            bool
+	deletingID             int
+	veicoloID              int
+	veicoloInfo            string
+	deleteWarningMovimenti int
+	deleteWarningTotale    float64
 }
 
 // NewCommesseModel crea una nuova istanza del model commesse
@@ -119,7 +114,6 @@ func NewCommesseModel(db *database.DB) CommesseModel {
 		{Title: "Versato", Width: 12},
 		{Title: "Residuo", Width: 12},
 	}
-
 	t := table.New(
 		table.WithColumns(columns),
 		table.WithFocused(true),
@@ -162,7 +156,6 @@ func NewCommesseModel(db *database.DB) CommesseModel {
 		{Title: "Modello", Width: 22},
 		{Title: "Proprietario", Width: 22},
 	}
-
 	vt := table.New(
 		table.WithColumns(vCols),
 		table.WithFocused(true),
@@ -179,7 +172,6 @@ func NewCommesseModel(db *database.DB) CommesseModel {
 		{Title: "Codice", Width: 15},
 		{Title: "Descrizione", Width: 45},
 	}
-
 	lt := table.New(
 		table.WithColumns(lCols),
 		table.WithFocused(true),
@@ -246,6 +238,24 @@ func (m *CommesseModel) Refresh() {
 	}
 
 	m.table.SetRows(rows)
+}
+
+// countMovimentiForCommessa conta i movimenti associati a una commessa
+func (m *CommesseModel) countMovimentiForCommessa(commessaID int) (int, float64) {
+	movimenti, _ := m.db.ListMovimenti()
+	count := 0
+	totale := 0.0
+
+	for _, mov := range movimenti {
+		if mov.CommessaID == commessaID {
+			count++
+			if mov.Tipo == "Entrata" {
+				totale += mov.Importo
+			}
+		}
+	}
+
+	return count, totale
 }
 
 // updateVeicoloTable aggiorna la tabella veicoli con filtro
@@ -315,7 +325,6 @@ func (m *CommesseModel) resetForm() {
 	for i := range m.inputs {
 		m.inputs[i].SetValue("")
 	}
-
 	m.inputs[5].SetValue("A") // Default: Aperta
 	m.veicoloID = 0
 	m.veicoloInfo = ""
@@ -430,7 +439,6 @@ func (m *CommesseModel) save() error {
 			c.DataApertura = old.DataApertura
 			c.Numero = old.Numero
 		}
-
 		if err := m.db.UpdateCommessa(c); err != nil {
 			return fmt.Errorf("errore aggiornamento: %w", err)
 		}
@@ -449,7 +457,6 @@ func (m CommesseModel) Init() tea.Cmd {
 
 // Update implementa tea.Model
 func (m CommesseModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-
 	// Gestione resize
 	if msg, ok := msg.(tea.WindowSizeMsg); ok {
 		m.width = msg.Width
@@ -548,12 +555,14 @@ func (m *CommesseModel) handleWorkSelection(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if row := m.lavoriTable.SelectedRow(); len(row) > 0 {
 				selectedDesc := row[1]
 				currentVal := m.inputs[1].Value()
-
 				if strings.TrimSpace(currentVal) == "" {
 					m.inputs[1].SetValue(selectedDesc)
 				} else {
 					m.inputs[1].SetValue(currentVal + ", " + selectedDesc)
 				}
+
+				// Scrolla alla fine del campo
+				m.inputs[1].CursorEnd()
 
 				m.selectionModeLavori = false
 				m.inputs[1].Focus()
@@ -583,13 +592,15 @@ func (m *CommesseModel) handleDeleteConfirmation(msg tea.Msg) (tea.Model, tea.Cm
 			}
 			m.Refresh()
 			m.showConfirm = false
+			m.deleteWarningMovimenti = 0
+			m.deleteWarningTotale = 0
 
 		case "n", "N", "esc":
 			m.showConfirm = false
+			m.deleteWarningMovimenti = 0
+			m.deleteWarningTotale = 0
 		}
-		return m, nil
 	}
-
 	return m, nil
 }
 
@@ -617,6 +628,12 @@ func (m *CommesseModel) handleListMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if row := m.table.SelectedRow(); len(row) > 0 {
 				id, _ := strconv.Atoi(row[0])
 				m.deletingID = id
+
+				// Conta movimenti associati
+				numMovimenti, totaleMovimenti := m.countMovimentiForCommessa(id)
+				m.deleteWarningMovimenti = numMovimenti
+				m.deleteWarningTotale = totaleMovimenti
+
 				m.showConfirm = true
 			}
 			return m, nil
@@ -629,11 +646,9 @@ func (m *CommesseModel) handleListMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if commessa != nil {
 					lavoriList := strings.Split(commessa.LavoriEseguiti, ",")
 					var formatted strings.Builder
-
 					for _, l := range lavoriList {
 						formatted.WriteString("• " + strings.TrimSpace(l) + "\n")
 					}
-
 					m.popupTitle = fmt.Sprintf("LAVORI COMMESSA #%s", commessa.Numero)
 					m.popupLavoriText = formatted.String()
 					m.showLavoriPopup = true
@@ -641,12 +656,10 @@ func (m *CommesseModel) handleListMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
-
-		m.table, cmd = m.table.Update(msg)
-		return m, cmd
 	}
 
-	return m, nil
+	m.table, cmd = m.table.Update(msg)
+	return m, cmd
 }
 
 // handleFormMode gestisce gli eventi in modalità form
@@ -708,6 +721,7 @@ func (m *CommesseModel) handleFormMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 	for i := 1; i < len(m.inputs); i++ {
 		m.inputs[i], cmds[i] = m.inputs[i].Update(msg)
 	}
+
 	return m, tea.Batch(cmds...)
 }
 
@@ -728,7 +742,6 @@ func (m CommesseModel) View() string {
 			"",
 			HelpStyle.Render("[Esc/↵/Q] Chiudi"),
 		)
-
 		return RenderPopup("DETTAGLIO LAVORI", content, m.width, m.height)
 	}
 
@@ -744,11 +757,7 @@ func (m CommesseModel) View() string {
 
 	// Dialog conferma eliminazione
 	if m.showConfirm {
-		return RenderConfirmDialog(
-			fmt.Sprintf("Eliminare la commessa #%d?", m.deletingID),
-			m.width,
-			m.height,
-		)
+		return m.renderDeleteConfirmation(width)
 	}
 
 	// Vista principale
@@ -757,6 +766,42 @@ func (m CommesseModel) View() string {
 	}
 
 	return m.renderFormView(width)
+}
+
+// renderDeleteConfirmation renderizza il dialog di conferma eliminazione con avviso
+func (m CommesseModel) renderDeleteConfirmation(width int) string {
+	var message strings.Builder
+
+	message.WriteString(fmt.Sprintf("⚠️  ELIMINAZIONE COMMESSA #%d\n\n", m.deletingID))
+
+	if m.deleteWarningMovimenti > 0 {
+		message.WriteString(ErrorStyle.Render(fmt.Sprintf(
+			"ATTENZIONE: Questa commessa ha %d movimenti di Prima Nota associati\n"+
+				"per un totale di %s!\n\n"+
+				"Eliminando la commessa verranno eliminati ANCHE TUTTI i movimenti\n"+
+				"di cassa collegati.\n\n",
+			m.deleteWarningMovimenti,
+			utils.FormatEuro(m.deleteWarningTotale),
+		)))
+	} else {
+		message.WriteString("Questa commessa non ha movimenti di Prima Nota associati.\n\n")
+	}
+
+	message.WriteString(WarningStyle.Render("Sei sicuro di voler procedere?\n"))
+	message.WriteString(HelpStyle.Render("\n[Y] Sì, elimina • [N/Esc] Annulla"))
+
+	box := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(ColorError).
+		Padding(1, 2).
+		Width(70).
+		Render(message.String())
+
+	if m.width > 0 && m.height > 0 {
+		return CenterContent(m.width, m.height, box)
+	}
+
+	return box
 }
 
 // renderListView renderizza la vista lista
@@ -777,11 +822,9 @@ func (m CommesseModel) renderListView(width int) string {
 
 	// Footer con messaggi
 	footer := RenderFooter(width)
-
 	if m.err != nil {
 		footer = "\n" + ErrorStyle.Render("✗ "+m.err.Error()) + "\n" + footer
 	}
-
 	if m.msg != "" {
 		footer = "\n" + SuccessStyle.Render(m.msg) + "\n" + footer
 	}
@@ -865,7 +908,6 @@ func (m CommesseModel) renderFormView(width int) string {
 		form.WriteString(fmt.Sprintf("%s %s\n",
 			labelStyle.Render(labels[i]+":"),
 			view))
-
 		if i == 0 || i == 1 || i == 3 {
 			form.WriteString("\n")
 		}
@@ -878,7 +920,6 @@ func (m CommesseModel) renderFormView(width int) string {
 
 	// Footer con messaggi
 	footer := RenderFooter(width)
-
 	if m.err != nil {
 		footer = "\n" + ErrorStyle.Render("✗ "+m.err.Error()) + "\n" + footer
 	}
@@ -905,6 +946,7 @@ func (m CommesseModel) renderFormView(width int) string {
 // renderVehicleSelection renderizza il popup selezione veicolo
 func (m CommesseModel) renderVehicleSelection(width int) string {
 	title := TitleStyle.Render("🔍 SELEZIONA VEICOLO")
+
 	filter := fmt.Sprintf("Cerca: %s", m.veicoloFilter.View())
 
 	inner := lipgloss.JoinVertical(
@@ -932,6 +974,7 @@ func (m CommesseModel) renderVehicleSelection(width int) string {
 // renderWorkSelection renderizza il popup selezione lavori
 func (m CommesseModel) renderWorkSelection(width int) string {
 	title := TitleStyle.Render("🔧 LAVORI STANDARD")
+
 	filter := fmt.Sprintf("Cerca: %s", m.lavoriFilter.View())
 
 	inner := lipgloss.JoinVertical(
