@@ -11,12 +11,23 @@ officina
 *.log
 debug.log
 
+# Backup
+backups/
+*.backup
+
+# Coverage
+coverage.out
+coverage.html
+*.coverprofile
+
 # IDE e editor
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
+.project
+.settings/
 
 # Dipendenze
 vendor/
@@ -24,9 +35,17 @@ vendor/
 # OS
 .DS_Store
 Thumbs.db
+ehthumbs.db
 
 # Cartelle temporanee
 .zencoder/
 .zenflow/
 tmp/
 temp/
+
+# Test binaries
+*.test
+
+# Build artifacts
+dist/
+build/
