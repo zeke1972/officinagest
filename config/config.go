@@ -14,7 +14,8 @@ type Config struct {
 }
 
 type DatabaseConfig struct {
-	Path    string
+	URI     string
+	Name    string
 	Timeout time.Duration
 }
 
@@ -39,8 +40,9 @@ func DefaultConfig() *Config {
 
 	return &Config{
 		Database: DatabaseConfig{
-			Path:    filepath.Join(dataDir, "officina.db"),
-			Timeout: 1 * time.Second,
+			URI:     "mongodb://localhost:27017",
+			Name:    "officina",
+			Timeout: 5 * time.Second,
 		},
 		App: AppConfig{
 			Name:       "Officina Manager",
@@ -58,13 +60,11 @@ func DefaultConfig() *Config {
 }
 
 func (c *Config) Validate() error {
-	if c.Database.Path == "" {
-		return fmt.Errorf("database path non può essere vuoto")
+	if c.Database.URI == "" {
+		return fmt.Errorf("database URI non può essere vuoto")
 	}
-
-	dbDir := filepath.Dir(c.Database.Path)
-	if err := os.MkdirAll(dbDir, 0755); err != nil {
-		return fmt.Errorf("impossibile creare directory database: %w", err)
+	if c.Database.Name == "" {
+		return fmt.Errorf("database name non può essere vuoto")
 	}
 
 	if c.Backup.Enabled && c.App.BackupPath == "" {

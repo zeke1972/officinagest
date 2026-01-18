@@ -2,8 +2,8 @@ package database
 
 // Stati commessa
 const (
-	StatoCommessaAperta  = "Aperta"
-	StatoCommessaChiusa  = "Chiusa"
+	StatoCommessaAperta = "Aperta"
+	StatoCommessaChiusa = "Chiusa"
 )
 
 // Tipi movimento prima nota

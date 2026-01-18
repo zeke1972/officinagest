@@ -28,15 +28,15 @@ func main() {
 
 	logger.Info("Avvio %s v%s", cfg.App.Name, cfg.App.Version)
 
-	// Inizializza database
-	db, err := database.InitDB(cfg.Database.Path)
+	// Inizializza database MongoDB
+	db, err := database.InitMongoDB(cfg.Database.URI, cfg.Database.Name)
 	if err != nil {
-		logger.Error("Errore apertura database: %v", err)
-		log.Fatalf("Errore apertura DB: %v", err)
+		logger.Error("Errore connessione database MongoDB: %v", err)
+		log.Fatalf("Errore connessione MongoDB: %v", err)
 	}
 	defer db.Close()
 
-	logger.Info("Database aperto: %s", cfg.Database.Path)
+	logger.Info("Database MongoDB connesso: %s/%s", cfg.Database.URI, cfg.Database.Name)
 
 	// Backup automatico
 	if cfg.Backup.Enabled {
