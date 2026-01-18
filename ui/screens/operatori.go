@@ -53,11 +53,11 @@ func NewOperatoriModel(db *database.DB) OperatoriModel {
 		table.WithHeight(12),
 		table.WithFocused(true),
 	)
+
 	t.SetStyles(GetTableStyles())
 
 	// Configurazione inputs
 	inputs := make([]textinput.Model, 4)
-
 	inputs[0] = textinput.New()
 	inputs[0].Placeholder = "Matricola (es. OPR001)"
 	inputs[0].Width = 40
@@ -226,7 +226,6 @@ func (m OperatoriModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.Refresh()
 				m.showConfirm = false
-
 			case "n", "N", "esc":
 				m.showConfirm = false
 			}
@@ -254,7 +253,6 @@ func (m OperatoriModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.mode = OpModeAdd
 				m.resetForm()
 				return m, nil
-
 			case "e", "enter":
 				if row := m.table.SelectedRow(); len(row) > 0 {
 					id, _ := strconv.Atoi(row[0])
@@ -262,7 +260,6 @@ func (m OperatoriModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.mode = OpModeEdit
 				}
 				return m, nil
-
 			case "x", "d":
 				if row := m.table.SelectedRow(); len(row) > 0 {
 					id, _ := strconv.Atoi(row[0])
@@ -271,10 +268,9 @@ func (m OperatoriModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, nil
 			}
-
-			m.table, cmd = m.table.Update(msg)
-			return m, cmd
 		}
+		m.table, cmd = m.table.Update(msg)
+		return m, cmd
 	}
 
 	// Modalità Form (Add/Edit)
@@ -298,7 +294,6 @@ func (m OperatoriModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.updateFocus()
 				return m, nil
-
 			case "tab", "down":
 				m.focusIndex++
 				if m.focusIndex >= len(m.inputs) {
@@ -306,7 +301,6 @@ func (m OperatoriModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.updateFocus()
 				return m, nil
-
 			case "shift+tab", "up":
 				m.focusIndex--
 				if m.focusIndex < 0 {
@@ -315,11 +309,11 @@ func (m OperatoriModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.updateFocus()
 				return m, nil
 			}
+		}
 
-			// Auto-uppercase per matricola
-			if m.focusIndex == 0 {
-				m.inputs[0].SetValue(strings.ToUpper(m.inputs[0].Value()))
-			}
+		// Auto-uppercase per matricola
+		if m.focusIndex == 0 {
+			m.inputs[0].SetValue(strings.ToUpper(m.inputs[0].Value()))
 		}
 
 		// Update inputs
@@ -349,16 +343,23 @@ func (m OperatoriModel) View() string {
 	}
 
 	header := RenderHeader(title, width)
-
 	var body string
 
 	// Dialog conferma eliminazione
 	if m.showConfirm {
-		body = RenderConfirmDialog(
-			fmt.Sprintf("Eliminare l'operatore #%d?", m.deletingID),
-			width,
-			0,
-		)
+		var message strings.Builder
+		message.WriteString(fmt.Sprintf("⚠️  ELIMINAZIONE OPERATORE #%d\n\n", m.deletingID))
+		message.WriteString(WarningStyle.Render("Sei sicuro di voler procedere?\n"))
+		message.WriteString(HelpStyle.Render("\n[Y] Sì, elimina • [N/Esc] Annulla"))
+
+		box := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(ColorError).
+			Padding(1, 2).
+			Width(50).
+			Render(message.String())
+
+		return CenterContent(m.width, m.height, box)
 	} else if m.mode == OpModeList {
 		// Vista lista
 		helpText := lipgloss.NewStyle().
@@ -389,13 +390,11 @@ func (m OperatoriModel) View() string {
 
 		form.WriteString("\n")
 		form.WriteString(HelpStyle.Render("[Tab/↑↓] Naviga • [↵] Conferma/Prossimo • [Esc] Annulla"))
-
 		body = form.String()
 	}
 
 	// Footer con messaggi
 	footer := RenderFooter(width)
-
 	if m.err != nil {
 		footer = "\n" + ErrorStyle.Render("✗ "+m.err.Error()) + "\n" + footer
 	}

@@ -44,25 +44,26 @@ func NewPreventiviModel(db *database.DB) PreventiviModel {
 	t := table.New(
 		table.WithColumns([]table.Column{
 			{Title: "ID", Width: 4},
-			{Title: "Numero", Width: 12},
-			{Title: "Cliente", Width: 35},
-			{Title: "Totale", Width: 12},
+			{Title: "Numero", Width: 15},
+			{Title: "Data", Width: 12},
+			{Title: "Cliente", Width: 30},
+			{Title: "Importo", Width: 12},
 			{Title: "Stato", Width: 10},
 		}),
 		table.WithHeight(12),
 		table.WithFocused(true),
 	)
+
 	t.SetStyles(GetTableStyles())
 
 	// Configurazione inputs
 	inputs := make([]textinput.Model, 3)
-
 	inputs[0] = textinput.New()
-	inputs[0].Placeholder = "Cliente (nome o ragione sociale)"
+	inputs[0].Placeholder = "Cliente o descrizione"
 	inputs[0].Width = 50
 
 	inputs[1] = textinput.New()
-	inputs[1].Placeholder = "Totale (es. 1250.50)"
+	inputs[1].Placeholder = "Importo (es. 1250.50)"
 	inputs[1].Width = 30
 
 	inputs[2] = textinput.New()
@@ -86,15 +87,16 @@ func (m *PreventiviModel) Refresh() {
 	rows := []table.Row{}
 
 	for _, p := range list {
-		stato := "Aperto"
+		stato := "⏳ Attesa"
 		if p.Accettato {
-			stato = "Accettato"
+			stato = "✅ Accettato"
 		}
 
 		rows = append(rows, table.Row{
 			fmt.Sprintf("%d", p.ID),
 			p.Numero,
-			utils.Truncate(p.Cliente, 35),
+			utils.FormatDate(p.Data),
+			utils.Truncate(p.Cliente, 30),
 			utils.FormatEuro(p.Totale),
 			stato,
 		})
@@ -151,12 +153,12 @@ func (m *PreventiviModel) validate() error {
 		return err
 	}
 
-	totale, err := utils.ParseFloat(m.inputs[1].Value())
+	importo, err := utils.ParseFloat(m.inputs[1].Value())
 	if err != nil {
 		return fmt.Errorf("importo non valido")
 	}
 
-	if err := utils.ValidateImportoPositivo(totale); err != nil {
+	if err := utils.ValidateImportoPositivo(importo); err != nil {
 		return err
 	}
 
@@ -169,13 +171,12 @@ func (m *PreventiviModel) save() error {
 		return err
 	}
 
-	totale, _ := utils.ParseFloat(m.inputs[1].Value())
+	importo, _ := utils.ParseFloat(m.inputs[1].Value())
 
 	p := &database.Preventivo{
 		Cliente:     m.inputs[0].Value(),
-		Totale:      totale,
+		Totale:      importo,
 		Descrizione: m.inputs[2].Value(),
-		Accettato:   false,
 	}
 
 	if m.mode == PrevModeAdd {
@@ -185,13 +186,12 @@ func (m *PreventiviModel) save() error {
 		m.msg = "✓ Preventivo creato con successo"
 	} else {
 		p.ID = m.selectedID
-
-		// Mantieni lo stato di accettazione esistente
+		// Mantieni dati esistenti
 		old, _ := m.db.GetPreventivo(m.selectedID)
 		if old != nil {
 			p.Numero = old.Numero
-			p.Accettato = old.Accettato
 			p.Data = old.Data
+			p.Accettato = old.Accettato
 		}
 
 		if err := m.db.UpdatePreventivo(p); err != nil {
@@ -201,6 +201,29 @@ func (m *PreventiviModel) save() error {
 	}
 
 	m.mode = PrevModeList
+	m.Refresh()
+	return nil
+}
+
+// toggleAccettato cambia lo stato accettato di un preventivo
+func (m *PreventiviModel) toggleAccettato(id int) error {
+	p, err := m.db.GetPreventivo(id)
+	if err != nil {
+		return err
+	}
+
+	p.Accettato = !p.Accettato
+
+	if err := m.db.UpdatePreventivo(p); err != nil {
+		return err
+	}
+
+	stato := "in attesa"
+	if p.Accettato {
+		stato = "accettato"
+	}
+
+	m.msg = fmt.Sprintf("✓ Preventivo #%s contrassegnato come %s", p.Numero, stato)
 	m.Refresh()
 	return nil
 }
@@ -233,7 +256,6 @@ func (m PreventiviModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.Refresh()
 				m.showConfirm = false
-
 			case "n", "N", "esc":
 				m.showConfirm = false
 			}
@@ -261,7 +283,6 @@ func (m PreventiviModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.mode = PrevModeAdd
 				m.resetForm()
 				return m, nil
-
 			case "e", "enter":
 				if row := m.table.SelectedRow(); len(row) > 0 {
 					id, _ := strconv.Atoi(row[0])
@@ -269,7 +290,14 @@ func (m PreventiviModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.mode = PrevModeEdit
 				}
 				return m, nil
-
+			case "a":
+				if row := m.table.SelectedRow(); len(row) > 0 {
+					id, _ := strconv.Atoi(row[0])
+					if err := m.toggleAccettato(id); err != nil {
+						m.err = err
+					}
+				}
+				return m, nil
 			case "x", "d":
 				if row := m.table.SelectedRow(); len(row) > 0 {
 					id, _ := strconv.Atoi(row[0])
@@ -277,29 +305,10 @@ func (m PreventiviModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.showConfirm = true
 				}
 				return m, nil
-
-			case "a":
-				// Accetta preventivo
-				if row := m.table.SelectedRow(); len(row) > 0 {
-					id, _ := strconv.Atoi(row[0])
-					p, _ := m.db.GetPreventivo(id)
-					if p != nil {
-						p.Accettato = !p.Accettato
-						m.db.UpdatePreventivo(p)
-						m.Refresh()
-						if p.Accettato {
-							m.msg = "✓ Preventivo accettato"
-						} else {
-							m.msg = "✓ Preventivo riaperto"
-						}
-					}
-				}
-				return m, nil
 			}
-
-			m.table, cmd = m.table.Update(msg)
-			return m, cmd
 		}
+		m.table, cmd = m.table.Update(msg)
+		return m, cmd
 	}
 
 	// Modalità Form (Add/Edit)
@@ -323,7 +332,6 @@ func (m PreventiviModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.updateFocus()
 				return m, nil
-
 			case "tab", "down":
 				m.focusIndex++
 				if m.focusIndex >= len(m.inputs) {
@@ -331,7 +339,6 @@ func (m PreventiviModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.updateFocus()
 				return m, nil
-
 			case "shift+tab", "up":
 				m.focusIndex--
 				if m.focusIndex < 0 {
@@ -355,9 +362,9 @@ func (m PreventiviModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // View implementa tea.Model
 func (m PreventiviModel) View() string {
-	width := 85
+	width := 90
 	if m.width > 0 {
-		width = min(m.width, 95)
+		width = min(m.width, 100)
 	}
 
 	// Titolo dinamico
@@ -369,22 +376,29 @@ func (m PreventiviModel) View() string {
 	}
 
 	header := RenderHeader(title, width)
-
 	var body string
 
 	// Dialog conferma eliminazione
 	if m.showConfirm {
-		body = RenderConfirmDialog(
-			fmt.Sprintf("Eliminare il preventivo #%d?", m.deletingID),
-			width,
-			0,
-		)
+		var message strings.Builder
+		message.WriteString(fmt.Sprintf("⚠️  ELIMINAZIONE PREVENTIVO #%d\n\n", m.deletingID))
+		message.WriteString(WarningStyle.Render("Sei sicuro di voler procedere?\n"))
+		message.WriteString(HelpStyle.Render("\n[Y] Sì, elimina • [N/Esc] Annulla"))
+
+		box := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(ColorError).
+			Padding(1, 2).
+			Width(50).
+			Render(message.String())
+
+		return CenterContent(m.width, m.height, box)
 	} else if m.mode == PrevModeList {
 		// Vista lista
 		helpText := lipgloss.NewStyle().
 			MarginBottom(1).
 			Foreground(ColorSubText).
-			Render("[N] Nuovo • [E/↵] Modifica • [A] Accetta/Riapri • [X/D] Elimina • [ESC] Menu")
+			Render("[N] Nuovo • [E/↵] Modifica • [A] Toggle Accettato • [X/D] Elimina • [ESC] Menu")
 
 		body = lipgloss.JoinVertical(
 			lipgloss.Left,
@@ -394,7 +408,7 @@ func (m PreventiviModel) View() string {
 	} else {
 		// Vista form
 		var form strings.Builder
-		labels := []string{"Cliente", "Totale €", "Descrizione"}
+		labels := []string{"Cliente", "Importo €", "Descrizione"}
 
 		for i, inp := range m.inputs {
 			labelStyle := LabelStyle
@@ -405,21 +419,15 @@ func (m PreventiviModel) View() string {
 			form.WriteString(fmt.Sprintf("%s %s\n",
 				labelStyle.Render(labels[i]+":"),
 				inp.View()))
-
-			if i == 1 {
-				form.WriteString("\n")
-			}
 		}
 
 		form.WriteString("\n")
 		form.WriteString(HelpStyle.Render("[Tab/↑↓] Naviga • [↵] Conferma/Prossimo • [Esc] Annulla"))
-
 		body = form.String()
 	}
 
 	// Footer con messaggi
 	footer := RenderFooter(width)
-
 	if m.err != nil {
 		footer = "\n" + ErrorStyle.Render("✗ "+m.err.Error()) + "\n" + footer
 	}

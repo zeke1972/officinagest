@@ -53,11 +53,11 @@ func NewFattureModel(db *database.DB) FattureModel {
 		table.WithHeight(12),
 		table.WithFocused(true),
 	)
+
 	t.SetStyles(GetTableStyles())
 
 	// Configurazione inputs
 	inputs := make([]textinput.Model, 3)
-
 	inputs[0] = textinput.New()
 	inputs[0].Placeholder = "Data (GG/MM/AAAA)"
 	inputs[0].CharLimit = 10
@@ -92,7 +92,7 @@ func (m *FattureModel) Refresh() {
 		if f.ClienteID > 0 {
 			c, err := m.db.GetCliente(f.ClienteID)
 			if err == nil && c != nil {
-				cliente = fmt.Sprintf("%s %s", c.Cognome, c.Nome)
+				cliente = c.RagioneSociale
 			}
 		}
 
@@ -116,7 +116,6 @@ func (m *FattureModel) resetForm() {
 
 	// Imposta data corrente
 	m.inputs[0].SetValue(time.Now().Format("02/01/2006"))
-
 	m.focusIndex = 0
 	m.err = nil
 	m.msg = ""
@@ -138,9 +137,10 @@ func (m *FattureModel) loadIntoForm(id int) {
 	if f.ClienteID > 0 {
 		c, _ := m.db.GetCliente(f.ClienteID)
 		if c != nil {
-			cliente = fmt.Sprintf("%s %s", c.Cognome, c.Nome)
+			cliente = c.RagioneSociale
 		}
 	}
+
 	m.inputs[1].SetValue(cliente)
 	m.inputs[2].SetValue(fmt.Sprintf("%.2f", f.Importo))
 
@@ -210,7 +210,6 @@ func (m *FattureModel) save() error {
 		m.msg = "✓ Fattura creata con successo"
 	} else {
 		f.ID = m.selectedID
-
 		// Mantieni numero esistente
 		old, _ := m.db.GetFattura(m.selectedID)
 		if old != nil {
@@ -257,7 +256,6 @@ func (m FattureModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.Refresh()
 				m.showConfirm = false
-
 			case "n", "N", "esc":
 				m.showConfirm = false
 			}
@@ -285,7 +283,6 @@ func (m FattureModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.mode = FatModeAdd
 				m.resetForm()
 				return m, nil
-
 			case "e", "enter":
 				if row := m.table.SelectedRow(); len(row) > 0 {
 					id, _ := strconv.Atoi(row[0])
@@ -293,7 +290,6 @@ func (m FattureModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.mode = FatModeEdit
 				}
 				return m, nil
-
 			case "x", "d":
 				if row := m.table.SelectedRow(); len(row) > 0 {
 					id, _ := strconv.Atoi(row[0])
@@ -302,10 +298,9 @@ func (m FattureModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, nil
 			}
-
-			m.table, cmd = m.table.Update(msg)
-			return m, cmd
 		}
+		m.table, cmd = m.table.Update(msg)
+		return m, cmd
 	}
 
 	// Modalità Form (Add/Edit)
@@ -329,7 +324,6 @@ func (m FattureModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.updateFocus()
 				return m, nil
-
 			case "tab", "down":
 				m.focusIndex++
 				if m.focusIndex >= len(m.inputs) {
@@ -337,7 +331,6 @@ func (m FattureModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.updateFocus()
 				return m, nil
-
 			case "shift+tab", "up":
 				m.focusIndex--
 				if m.focusIndex < 0 {
@@ -375,16 +368,23 @@ func (m FattureModel) View() string {
 	}
 
 	header := RenderHeader(title, width)
-
 	var body string
 
 	// Dialog conferma eliminazione
 	if m.showConfirm {
-		body = RenderConfirmDialog(
-			fmt.Sprintf("Eliminare la fattura #%d?", m.deletingID),
-			width,
-			0,
-		)
+		var message strings.Builder
+		message.WriteString(fmt.Sprintf("⚠️  ELIMINAZIONE FATTURA #%d\n\n", m.deletingID))
+		message.WriteString(WarningStyle.Render("Sei sicuro di voler procedere?\n"))
+		message.WriteString(HelpStyle.Render("\n[Y] Sì, elimina • [N/Esc] Annulla"))
+
+		box := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(ColorError).
+			Padding(1, 2).
+			Width(50).
+			Render(message.String())
+
+		return CenterContent(m.width, m.height, box)
 	} else if m.mode == FatModeList {
 		// Vista lista
 		helpText := lipgloss.NewStyle().
@@ -415,13 +415,11 @@ func (m FattureModel) View() string {
 
 		form.WriteString("\n")
 		form.WriteString(HelpStyle.Render("[Tab/↑↓] Naviga • [↵] Conferma/Prossimo • [Esc] Annulla"))
-
 		body = form.String()
 	}
 
 	// Footer con messaggi
 	footer := RenderFooter(width)
-
 	if m.err != nil {
 		footer = "\n" + ErrorStyle.Render("✗ "+m.err.Error()) + "\n" + footer
 	}

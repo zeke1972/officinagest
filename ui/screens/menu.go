@@ -36,6 +36,7 @@ func NewMenuModel(db *database.DB) MenuModel {
 		items: []MenuItem{
 			{Label: "Gestione Clienti", Icon: "👥", State: StateClienti},
 			{Label: "Gestione Veicoli", Icon: "🚗", State: StateVeicoli},
+			{Label: "Gestione Fornitori", Icon: "🏢", State: StateFornitori},
 			{Label: "Gestione Commesse", Icon: "🔧", State: StateCommesse},
 			{Label: "Agenda & Appuntamenti", Icon: "📅", State: StateAgenda},
 			{Label: "Prima Nota & Cassa", Icon: "💶", State: StatePrimaNota},
@@ -55,7 +56,6 @@ func (m *MenuModel) RefreshStats() {
 		return
 	}
 
-	// Conta appuntamenti di oggi
 	list, _ := m.db.ListAppuntamenti()
 	count := 0
 	today := time.Now().Format("2006-01-02")
@@ -66,7 +66,6 @@ func (m *MenuModel) RefreshStats() {
 	}
 	m.todayAppointments = count
 
-	// Conta commesse aperte
 	commesse, _ := m.db.ListCommesse()
 	openCount := 0
 	for _, c := range commesse {
@@ -84,7 +83,6 @@ func (m MenuModel) Init() tea.Cmd {
 
 // Update implementa tea.Model
 func (m MenuModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	// Aggiorna statistiche ad ogni update
 	m.RefreshStats()
 
 	switch msg := msg.(type) {
@@ -116,7 +114,7 @@ func (m MenuModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			target := m.items[m.cursor].State
 			return m, func() tea.Msg { return ChangeScreenMsg(target) }
 
-		case "1", "2", "3", "4", "5", "6", "7", "8":
+		case "1", "2", "3", "4", "5", "6", "7", "8", "9":
 			num := int(msg.String()[0]-'0') - 1
 			if num >= 0 && num < len(m.items) {
 				target := m.items[num].State
@@ -135,10 +133,8 @@ func (m MenuModel) View() string {
 		width = min(m.width, 80)
 	}
 
-	// Header
 	header := RenderHeader("MENU PRINCIPALE", width)
 
-	// Statistiche in evidenza
 	var statsBuilder strings.Builder
 	if m.todayAppointments > 0 || m.openCommesse > 0 {
 		statsBuilder.WriteString(lipgloss.NewStyle().
@@ -158,11 +154,8 @@ func (m MenuModel) View() string {
 		statsBuilder.WriteString("\n")
 	}
 
-	// Menu items
 	var menuBuilder strings.Builder
-
 	for i, item := range m.items {
-		// Badge per notifiche
 		badge := ""
 		if item.State == StateAgenda && m.todayAppointments > 0 {
 			badge = lipgloss.NewStyle().
@@ -178,7 +171,6 @@ func (m MenuModel) View() string {
 				Render(fmt.Sprintf(" [%d]", m.openCommesse))
 		}
 
-		// Stile numero: evidenziato se selezionato
 		var numLabel string
 		if i == m.cursor {
 			numLabel = lipgloss.NewStyle().
@@ -193,7 +185,6 @@ func (m MenuModel) View() string {
 				Render(fmt.Sprintf("[%d]", i+1))
 		}
 
-		// Costruisce la riga
 		cursor := "  "
 		if i == m.cursor {
 			cursor = "▶ "
@@ -211,10 +202,8 @@ func (m MenuModel) View() string {
 		}
 	}
 
-	// Footer
 	footer := RenderFooter(width)
 
-	// Composizione finale
 	content := lipgloss.JoinVertical(
 		lipgloss.Left,
 		header,
@@ -227,7 +216,6 @@ func (m MenuModel) View() string {
 
 	box := MainBoxStyle.Copy().Width(width - 4).Render(content)
 
-	// Centra se dimensioni disponibili
 	if m.width > 0 && m.height > 0 {
 		return CenterContent(m.width, m.height, box)
 	}

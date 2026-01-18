@@ -61,7 +61,6 @@ type VeicoliModel struct {
 
 // NewVeicoliModel crea una nuova istanza del model veicoli
 func NewVeicoliModel(db *database.DB) VeicoliModel {
-	// Tabella principale veicoli
 	columns := []table.Column{
 		{Title: "ID", Width: 4},
 		{Title: "Targa", Width: 10},
@@ -69,16 +68,16 @@ func NewVeicoliModel(db *database.DB) VeicoliModel {
 		{Title: "Stato Commessa", Width: 28},
 		{Title: "Proprietario", Width: 20},
 	}
+
 	t := table.New(
 		table.WithColumns(columns),
 		table.WithFocused(true),
 		table.WithHeight(12),
 	)
+
 	t.SetStyles(GetTableStyles())
 
-	// Input form
 	inputs := make([]textinput.Model, 4)
-
 	inputs[0] = textinput.New()
 	inputs[0].Placeholder = "Targa (es. AB123CD)"
 	inputs[0].CharLimit = 10
@@ -96,25 +95,24 @@ func NewVeicoliModel(db *database.DB) VeicoliModel {
 	inputs[3].Placeholder = "[ INVIO PER SCEGLIERE PROPRIETARIO ]"
 	inputs[3].Width = 40
 
-	// Tabella selezione cliente
 	clientCols := []table.Column{
 		{Title: "ID", Width: 4},
-		{Title: "Cognome", Width: 20},
-		{Title: "Nome", Width: 20},
+		{Title: "Ragione Sociale/N.C.", Width: 35},
 		{Title: "Telefono", Width: 14},
 	}
+
 	ct := table.New(
 		table.WithColumns(clientCols),
 		table.WithFocused(true),
 		table.WithHeight(10),
 	)
+
 	ct.SetStyles(GetTableStyles())
 
 	cf := textinput.New()
 	cf.Placeholder = "🔍 Cerca proprietario..."
 	cf.Width = 50
 
-	// Viewport per storico
 	vp := viewport.New(70, 20)
 	vp.Style = lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
@@ -146,7 +144,6 @@ func (m *VeicoliModel) Refresh() {
 		hasOpen := false
 		statusStr := "—"
 
-		// Cerca commesse aperte per questo veicolo
 		for _, c := range commesse {
 			if c.VeicoloID == v.ID && c.Stato == "Aperta" {
 				if c.DataApertura.After(lastOpen) {
@@ -168,7 +165,6 @@ func (m *VeicoliModel) Refresh() {
 		})
 	}
 
-	// Ordina: prima veicoli con commesse aperte (per data recente), poi altri
 	sort.Slice(viewItems, func(i, j int) bool {
 		if viewItems[i].HasOpen && viewItems[j].HasOpen {
 			return viewItems[i].LastOpenDate.After(viewItems[j].LastOpenDate)
@@ -182,7 +178,6 @@ func (m *VeicoliModel) Refresh() {
 		return viewItems[i].Veicolo.ID > viewItems[j].Veicolo.ID
 	})
 
-	// Genera righe tabella
 	rows := []table.Row{}
 	for _, item := range viewItems {
 		v := item.Veicolo
@@ -190,13 +185,13 @@ func (m *VeicoliModel) Refresh() {
 		if v.ClienteID > 0 {
 			c, err := m.db.GetCliente(v.ClienteID)
 			if err == nil && c != nil {
-				prop = utils.Truncate(fmt.Sprintf("%s %s", c.Cognome, c.Nome), 20)
+				prop = utils.Truncate(c.RagioneSociale, 20)
 			}
 		}
 
 		rows = append(rows, table.Row{
 			fmt.Sprintf("%d", v.ID),
-			v.Targa,
+			strings.ToUpper(v.Targa),
 			utils.Truncate(v.Marca+" "+v.Modello, 22),
 			item.StatusString,
 			prop,
@@ -214,7 +209,6 @@ func (m *VeicoliModel) countDataForVeicolo(veicoloID int) (int, int, float64) {
 	numCommesse := 0
 	commesseIDs := make(map[int]bool)
 
-	// Conta commesse del veicolo
 	for _, c := range commesse {
 		if c.VeicoloID == veicoloID {
 			numCommesse++
@@ -222,7 +216,6 @@ func (m *VeicoliModel) countDataForVeicolo(veicoloID int) (int, int, float64) {
 		}
 	}
 
-	// Conta movimenti associati a queste commesse
 	numMovimenti := 0
 	totaleMov := 0.0
 	for _, mov := range movimenti {
@@ -244,18 +237,15 @@ func (m *VeicoliModel) updateClientTable() {
 	rows := []table.Row{}
 
 	for _, c := range clients {
-		cognome := strings.ToUpper(c.Cognome)
-		nome := strings.ToUpper(c.Nome)
+		ragioneSociale := strings.ToUpper(c.RagioneSociale)
 		telefono := strings.ToUpper(c.Telefono)
 
 		if filter == "" ||
-			strings.Contains(cognome, filter) ||
-			strings.Contains(nome, filter) ||
+			strings.Contains(ragioneSociale, filter) ||
 			strings.Contains(telefono, filter) {
 			rows = append(rows, table.Row{
 				fmt.Sprintf("%d", c.ID),
-				utils.Truncate(c.Cognome, 20),
-				utils.Truncate(c.Nome, 20),
+				utils.Truncate(c.RagioneSociale, 35),
 				c.Telefono,
 			})
 		}
@@ -269,6 +259,7 @@ func (m *VeicoliModel) resetForm() {
 	for i := range m.inputs {
 		m.inputs[i].SetValue("")
 	}
+
 	m.clienteID = 0
 	m.clienteInfo = "Nessun proprietario"
 	m.focusIndex = 0
@@ -286,7 +277,7 @@ func (m *VeicoliModel) loadIntoForm(id int) {
 	}
 
 	m.selectedID = id
-	m.inputs[0].SetValue(v.Targa)
+	m.inputs[0].SetValue(strings.ToUpper(v.Targa))
 	m.inputs[1].SetValue(v.Marca)
 	m.inputs[2].SetValue(v.Modello)
 	m.clienteID = v.ClienteID
@@ -294,7 +285,7 @@ func (m *VeicoliModel) loadIntoForm(id int) {
 	if v.ClienteID > 0 {
 		c, err := m.db.GetCliente(v.ClienteID)
 		if err == nil && c != nil {
-			m.clienteInfo = fmt.Sprintf("%s %s", c.Cognome, c.Nome)
+			m.clienteInfo = c.RagioneSociale
 			m.inputs[3].SetValue(m.clienteInfo)
 		}
 	} else {
@@ -320,7 +311,6 @@ func (m *VeicoliModel) loadHistory(veicoloID int) {
 		}
 	}
 
-	// Ordina per data decrescente
 	sort.Slice(filtered, func(i, j int) bool {
 		return filtered[i].DataApertura.After(filtered[j].DataApertura)
 	})
@@ -328,9 +318,9 @@ func (m *VeicoliModel) loadHistory(veicoloID int) {
 	v, _ := m.db.GetVeicolo(veicoloID)
 	var sb strings.Builder
 
-	// Titolo
 	title := fmt.Sprintf("📋 STORICO INTERVENTI: %s %s (%s)",
-		v.Marca, v.Modello, v.Targa)
+		v.Marca, v.Modello, strings.ToUpper(v.Targa))
+
 	sb.WriteString(lipgloss.NewStyle().
 		Bold(true).
 		Foreground(ColorPrimary).
@@ -342,7 +332,6 @@ func (m *VeicoliModel) loadHistory(veicoloID int) {
 		for _, c := range filtered {
 			dateStr := utils.FormatDate(c.DataApertura)
 
-			// Stato
 			status := "🔴 APERTA"
 			stStyle := ErrorStyle
 			if c.Stato == "Chiusa" {
@@ -350,16 +339,15 @@ func (m *VeicoliModel) loadHistory(veicoloID int) {
 				stStyle = SuccessStyle
 			}
 
-			// Calcola versato
 			versato := 0.0
 			for _, mov := range movimenti {
 				if mov.CommessaID == c.ID && mov.Tipo == "Entrata" {
 					versato += mov.Importo
 				}
 			}
+
 			residuo := c.Totale - versato
 
-			// Rendering commessa
 			sb.WriteString(lipgloss.NewStyle().
 				Bold(true).
 				Foreground(ColorHighlight).
@@ -370,13 +358,12 @@ func (m *VeicoliModel) loadHistory(veicoloID int) {
 			sb.WriteString(fmt.Sprintf("💵 Versato: %s | Residuo: %s\n",
 				utils.FormatEuro(versato), utils.FormatEuro(residuo)))
 
-			// Lavori - lista completa
 			sb.WriteString("🔧 Lavori:\n")
 			lavori := strings.Split(c.LavoriEseguiti, ",")
 			for _, lavoro := range lavori {
 				lavoro = strings.TrimSpace(lavoro)
 				if lavoro != "" {
-					sb.WriteString(fmt.Sprintf("   • %s\n", lavoro))
+					sb.WriteString(fmt.Sprintf("  • %s\n", lavoro))
 				}
 			}
 
@@ -467,14 +454,12 @@ func (m VeicoliModel) Init() tea.Cmd {
 func (m VeicoliModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
-	// Gestione resize
 	if msg, ok := msg.(tea.WindowSizeMsg); ok {
 		m.width = msg.Width
 		m.height = msg.Height
 		return m, nil
 	}
 
-	// Overlay storico
 	if m.showOverlay {
 		if k, ok := msg.(tea.KeyMsg); ok {
 			if k.String() == "esc" || k.String() == "h" || k.String() == "q" {
@@ -486,7 +471,6 @@ func (m VeicoliModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 
-	// Popup selezione cliente
 	if m.selectionMode {
 		switch msg := msg.(type) {
 		case tea.KeyMsg:
@@ -495,11 +479,10 @@ func (m VeicoliModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.selectionMode = false
 				m.updateFocus()
 				return m, nil
-
 			case "enter":
 				if row := m.clientTable.SelectedRow(); len(row) > 0 {
 					m.clienteID, _ = strconv.Atoi(row[0])
-					m.clienteInfo = fmt.Sprintf("%s %s", row[1], row[2])
+					m.clienteInfo = row[1]
 					m.inputs[3].SetValue(m.clienteInfo)
 					m.selectionMode = false
 					m.focusIndex = 0
@@ -507,21 +490,19 @@ func (m VeicoliModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, nil
 			}
-
-			var cmdF, cmdT tea.Cmd
-			m.clientFilter, cmdF = m.clientFilter.Update(msg)
-			m.updateClientTable()
-			m.clientTable, cmdT = m.clientTable.Update(msg)
-			return m, tea.Batch(cmdF, cmdT)
 		}
+
+		var cmdF, cmdT tea.Cmd
+		m.clientFilter, cmdF = m.clientFilter.Update(msg)
+		m.updateClientTable()
+		m.clientTable, cmdT = m.clientTable.Update(msg)
+		return m, tea.Batch(cmdF, cmdT)
 	}
 
-	// Conferma eliminazione
 	if m.showConfirm {
 		if k, ok := msg.(tea.KeyMsg); ok {
 			switch k.String() {
 			case "y", "Y":
-				// Elimina anche le commesse associate
 				commesse, _ := m.db.ListCommesse()
 				count := 0
 				for _, c := range commesse {
@@ -530,28 +511,28 @@ func (m VeicoliModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						count++
 					}
 				}
+
 				if err := m.db.DeleteVeicolo(m.deletingID); err != nil {
 					m.err = fmt.Errorf("errore eliminazione: %w", err)
 				} else {
 					m.msg = fmt.Sprintf("✓ Veicolo, %d commesse e relativi movimenti eliminati", count)
 				}
+
 				m.Refresh()
 				m.showConfirm = false
 				m.deleteWarningCommesse = 0
 				m.deleteWarningMovimenti = 0
 				m.deleteWarningTotale = 0
-
 			case "n", "N", "esc":
 				m.showConfirm = false
 				m.deleteWarningCommesse = 0
 				m.deleteWarningMovimenti = 0
 				m.deleteWarningTotale = 0
 			}
+			return m, nil
 		}
-		return m, nil
 	}
 
-	// Gestione ESC
 	if k, ok := msg.(tea.KeyMsg); ok && k.String() == "esc" {
 		if m.mode != ModeList {
 			m.mode = ModeList
@@ -562,7 +543,6 @@ func (m VeicoliModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, func() tea.Msg { return ChangeScreenMsg(StateMenu) }
 	}
 
-	// Modalità Lista
 	if m.mode == ModeList {
 		switch msg := msg.(type) {
 		case tea.KeyMsg:
@@ -571,7 +551,6 @@ func (m VeicoliModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.mode = ModeAdd
 				m.resetForm()
 				return m, nil
-
 			case "e", "enter":
 				if row := m.table.SelectedRow(); len(row) > 0 {
 					id, _ := strconv.Atoi(row[0])
@@ -579,39 +558,31 @@ func (m VeicoliModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.mode = ModeEdit
 				}
 				return m, nil
-
 			case "h":
 				if row := m.table.SelectedRow(); len(row) > 0 {
 					id, _ := strconv.Atoi(row[0])
 					m.loadHistory(id)
 				}
 				return m, nil
-
 			case "x", "d":
 				if row := m.table.SelectedRow(); len(row) > 0 {
 					id, _ := strconv.Atoi(row[0])
 					m.deletingID = id
-
-					// Conta dati associati
 					numCommesse, numMovimenti, totaleMovimenti := m.countDataForVeicolo(id)
 					m.deleteWarningCommesse = numCommesse
 					m.deleteWarningMovimenti = numMovimenti
 					m.deleteWarningTotale = totaleMovimenti
-
 					m.showConfirm = true
 				}
 				return m, nil
 			}
 		}
-
 		m.table, cmd = m.table.Update(msg)
 		return m, cmd
 	}
 
-	// Modalità Form (Add/Edit)
 	if m.mode == ModeAdd || m.mode == ModeEdit {
 		if k, ok := msg.(tea.KeyMsg); ok {
-			// Campo cliente: apre selezione
 			if m.focusIndex == 3 && (k.String() == "enter" || k.String() == " ") {
 				m.selectionMode = true
 				m.clientFilter.SetValue("")
@@ -622,7 +593,6 @@ func (m VeicoliModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			switch k.String() {
 			case "enter":
-				// Se non siamo sul campo cliente, salva
 				if m.focusIndex != 3 {
 					if err := m.save(); err != nil {
 						m.err = err
@@ -630,7 +600,6 @@ func (m VeicoliModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 				return m, nil
-
 			case "tab", "down":
 				m.focusIndex++
 				if m.focusIndex > 3 {
@@ -638,7 +607,6 @@ func (m VeicoliModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.updateFocus()
 				return m, nil
-
 			case "shift+tab", "up":
 				m.focusIndex--
 				if m.focusIndex < 0 {
@@ -647,127 +615,98 @@ func (m VeicoliModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.updateFocus()
 				return m, nil
 			}
-
-			// Auto-uppercase per targa
-			if m.focusIndex == 0 {
-				m.inputs[0].SetValue(strings.ToUpper(m.inputs[0].Value()))
-			}
 		}
 
-		// Update inputs (escluso campo cliente readonly)
-		cmds := make([]tea.Cmd, 4)
-		for i := 0; i < 3; i++ {
+		if m.focusIndex == 0 {
+			m.inputs[0].SetValue(strings.ToUpper(m.inputs[0].Value()))
+		}
+
+		cmds := make([]tea.Cmd, len(m.inputs))
+		for i := range m.inputs {
 			m.inputs[i], cmds[i] = m.inputs[i].Update(msg)
 		}
-
 		return m, tea.Batch(cmds...)
 	}
 
 	return m, nil
 }
 
-// renderDeleteConfirmation renderizza il dialog di conferma eliminazione con avviso
-func (m VeicoliModel) renderDeleteConfirmation(width int) string {
-	var message strings.Builder
-
-	v, _ := m.db.GetVeicolo(m.deletingID)
-	targa := "???"
-	modello := "???"
-	if v != nil {
-		targa = v.Targa
-		modello = v.Marca + " " + v.Modello
-	}
-
-	message.WriteString(fmt.Sprintf("⚠️  ELIMINAZIONE VEICOLO #%d\n", m.deletingID))
-	message.WriteString(fmt.Sprintf("%s - %s\n\n", targa, modello))
-
-	if m.deleteWarningCommesse > 0 {
-		message.WriteString(ErrorStyle.Render(fmt.Sprintf(
-			"ATTENZIONE: Questo veicolo ha %d commesse associate!\n\n"+
-				"Eliminando il veicolo verranno eliminate:\n"+
-				"  • %d commesse\n"+
-				"  • %d movimenti di Prima Nota (totale: %s)\n\n"+
-				"TUTTI I DATI VERRANNO PERSI IN MODO PERMANENTE!\n\n",
-			m.deleteWarningCommesse,
-			m.deleteWarningCommesse,
-			m.deleteWarningMovimenti,
-			utils.FormatEuro(m.deleteWarningTotale),
-		)))
-	} else {
-		message.WriteString("Questo veicolo non ha commesse o movimenti associati.\n\n")
-	}
-
-	message.WriteString(WarningStyle.Render("Sei sicuro di voler procedere?\n"))
-	message.WriteString(HelpStyle.Render("\n[Y] Sì, elimina TUTTO • [N/Esc] Annulla"))
-
-	box := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(ColorError).
-		Padding(1, 2).
-		Width(75).
-		Render(message.String())
-
-	if m.width > 0 && m.height > 0 {
-		return CenterContent(m.width, m.height, box)
-	}
-
-	return box
-}
-
 // View implementa tea.Model
 func (m VeicoliModel) View() string {
 	width := 90
 	if m.width > 0 {
-		width = min(m.width, 110)
+		width = min(m.width, 100)
 	}
 
-	// Overlay storico
 	if m.showOverlay {
-		content := lipgloss.JoinVertical(
-			lipgloss.Left,
-			m.viewport.View(),
-			"",
-			HelpStyle.Render("[Esc/H/Q] Chiudi • [↑↓] Scorri"),
-		)
-		box := MainBoxStyle.Copy().Width(min(width-4, 80)).Render(content)
-		if m.width > 0 && m.height > 0 {
-			return CenterContent(m.width, m.height, box)
-		}
-		return box
+		return CenterContent(m.width, m.height, m.viewport.View())
 	}
 
-	// Popup selezione cliente
-	if m.selectionMode {
-		title := TitleStyle.Render("🔍 SELEZIONA PROPRIETARIO")
-		filter := fmt.Sprintf("Cerca: %s", m.clientFilter.View())
+	if m.showConfirm {
+		var message strings.Builder
+		v, _ := m.db.GetVeicolo(m.deletingID)
+		targa := "???"
+		if v != nil {
+			targa = fmt.Sprintf("%s %s (%s)", v.Marca, v.Modello, v.Targa)
+		}
 
-		inner := lipgloss.JoinVertical(
+		message.WriteString(fmt.Sprintf("⚠️  ELIMINAZIONE VEICOLO #%d\n", m.deletingID))
+		message.WriteString(fmt.Sprintf("%s\n\n", targa))
+
+		if m.deleteWarningCommesse > 0 {
+			message.WriteString(ErrorStyle.Render(fmt.Sprintf(
+				"ATTENZIONE: Questo veicolo ha dati associati!\n\n"+
+					"Eliminando il veicolo verranno eliminati:\n"+
+					" • %d commesse\n"+
+					" • %d movimenti di Prima Nota (totale: %s)\n\n"+
+					"TUTTI I DATI VERRANNO PERSI IN MODO PERMANENTE!\n\n",
+				m.deleteWarningCommesse,
+				m.deleteWarningMovimenti,
+				utils.FormatEuro(m.deleteWarningTotale),
+			)))
+		} else {
+			message.WriteString("Questo veicolo non ha commesse o movimenti associati.\n\n")
+		}
+
+		message.WriteString(WarningStyle.Render("Sei sicuro di voler procedere?\n"))
+		message.WriteString(HelpStyle.Render("\n[Y] Sì, elimina TUTTO • [N/Esc] Annulla"))
+
+		box := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(ColorError).
+			Padding(1, 2).
+			Width(75).
+			Render(message.String())
+
+		return CenterContent(m.width, m.height, box)
+	}
+
+	if m.selectionMode {
+		title := RenderHeader("SELEZIONA PROPRIETARIO", width)
+		filterView := lipgloss.NewStyle().
+			MarginBottom(1).
+			Render(m.clientFilter.View())
+
+		body := lipgloss.JoinVertical(
+			lipgloss.Left,
+			filterView,
+			m.clientTable.View(),
+		)
+
+		helpText := HelpStyle.Render("\n[↑↓] Naviga • [↵] Seleziona • [Esc] Annulla")
+
+		content := lipgloss.JoinVertical(
 			lipgloss.Left,
 			title,
 			"",
-			filter,
-			"",
-			m.clientTable.View(),
-			"",
-			HelpStyle.Render("[↵] Seleziona • [Esc] Annulla"),
+			lipgloss.NewStyle().Padding(0, 2).Render(body),
+			helpText,
 		)
 
-		box := MainBoxStyle.Copy().
-			Width(min(width-10, 70)).
-			Render(inner)
-
-		if m.width > 0 && m.height > 0 {
-			return CenterContent(m.width, m.height, box)
-		}
-		return box
+		box := MainBoxStyle.Copy().Width(width - 4).Render(content)
+		return CenterContent(m.width, m.height, box)
 	}
 
-	// Dialog conferma eliminazione
-	if m.showConfirm {
-		return m.renderDeleteConfirmation(width)
-	}
-
-	// Titolo dinamico
 	title := "GESTIONE VEICOLI"
 	if m.mode == ModeAdd {
 		title = "NUOVO VEICOLO"
@@ -779,7 +718,6 @@ func (m VeicoliModel) View() string {
 	var body string
 
 	if m.mode == ModeList {
-		// Vista lista
 		helpText := lipgloss.NewStyle().
 			MarginBottom(1).
 			Foreground(ColorSubText).
@@ -791,60 +729,34 @@ func (m VeicoliModel) View() string {
 			m.table.View(),
 		)
 	} else {
-		// Vista form
 		var form strings.Builder
 		labels := []string{"Targa", "Marca", "Modello", "Proprietario"}
 
-		for i := 0; i < 4; i++ {
+		for i, inp := range m.inputs {
 			labelStyle := LabelStyle
 			if i == m.focusIndex {
 				labelStyle = LabelFocusedStyle
 			}
 
-			view := m.inputs[i].View()
-
-			// Campo proprietario (readonly con highlight)
-			if i == 3 {
-				if m.focusIndex == 3 {
-					if m.clienteInfo == "" || m.clienteInfo == "Nessun proprietario" {
-						view = lipgloss.NewStyle().
-							Foreground(ColorPrimary).
-							Render("[ INVIO PER SCEGLIERE ]")
-					} else {
-						view = lipgloss.NewStyle().
-							Foreground(ColorPrimary).
-							Bold(true).
-							Render(m.clienteInfo)
-					}
-				} else {
-					if m.clienteInfo == "" || m.clienteInfo == "Nessun proprietario" {
-						view = HelpStyle.Render("[ Nessuno ]")
-					} else {
-						view = m.clienteInfo
-					}
-				}
-			}
-
 			form.WriteString(fmt.Sprintf("%s %s\n",
 				labelStyle.Render(labels[i]+":"),
-				view))
+				inp.View()))
 		}
 
 		form.WriteString("\n")
-		form.WriteString(HelpStyle.Render("[Tab/↑↓] Naviga • [↵] Salva • [Esc] Annulla"))
+		form.WriteString(HelpStyle.Render("[Tab/↑↓] Naviga • [↵] Conferma • [Esc] Annulla"))
 		body = form.String()
 	}
 
-	// Footer con messaggi
 	footer := RenderFooter(width)
 	if m.err != nil {
 		footer = "\n" + ErrorStyle.Render("✗ "+m.err.Error()) + "\n" + footer
 	}
+
 	if m.msg != "" {
 		footer = "\n" + SuccessStyle.Render(m.msg) + "\n" + footer
 	}
 
-	// Composizione finale
 	content := lipgloss.JoinVertical(
 		lipgloss.Left,
 		header,

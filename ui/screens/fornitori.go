@@ -13,21 +13,21 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// ClienteMode rappresenta la modalità corrente della schermata
-type ClienteMode int
+// FornitoreMode rappresenta la modalità corrente della schermata
+type FornitoreMode int
 
 const (
-	ClList ClienteMode = iota
-	ClAdd
-	ClEdit
+	FornList FornitoreMode = iota
+	FornAdd
+	FornEdit
 )
 
-// ClientiModel gestisce la schermata clienti
-type ClientiModel struct {
+// FornitoriModel gestisce la schermata fornitori
+type FornitoriModel struct {
 	db                     *database.DB
 	table                  table.Model
 	inputs                 []textinput.Model
-	mode                   ClienteMode
+	mode                   FornitoreMode
 	focusIndex             int
 	selectedID             int
 	err                    error
@@ -36,17 +36,15 @@ type ClientiModel struct {
 	height                 int
 	showConfirm            bool
 	deletingID             int
-	deleteWarningVeicoli   int
-	deleteWarningCommesse  int
 	deleteWarningMovimenti int
 	deleteWarningTotale    float64
 }
 
-// NewClientiModel crea una nuova istanza del model clienti
-func NewClientiModel(db *database.DB) ClientiModel {
+// NewFornitoriModel crea una nuova istanza del model fornitori
+func NewFornitoriModel(db *database.DB) FornitoriModel {
 	columns := []table.Column{
 		{Title: "ID", Width: 4},
-		{Title: "Ragione Sociale/N.C.", Width: 35},
+		{Title: "Ragione Sociale", Width: 35},
 		{Title: "Telefono", Width: 14},
 		{Title: "Email", Width: 25},
 	}
@@ -61,11 +59,11 @@ func NewClientiModel(db *database.DB) ClientiModel {
 
 	inputs := make([]textinput.Model, 11)
 	inputs[0] = textinput.New()
-	inputs[0].Placeholder = "Ragione Sociale / Nome e Cognome"
+	inputs[0].Placeholder = "Ragione Sociale"
 	inputs[0].Width = 50
 
 	inputs[1] = textinput.New()
-	inputs[1].Placeholder = "Telefono (es. 333 1234567)"
+	inputs[1].Placeholder = "Telefono (es. 06 12345678)"
 	inputs[1].Width = 40
 
 	inputs[2] = textinput.New()
@@ -109,74 +107,54 @@ func NewClientiModel(db *database.DB) ClientiModel {
 	inputs[10].CharLimit = 2
 	inputs[10].Width = 10
 
-	m := ClientiModel{
+	m := FornitoriModel{
 		db:     db,
 		table:  t,
 		inputs: inputs,
-		mode:   ClList,
+		mode:   FornList,
 	}
 
 	m.Refresh()
 	return m
 }
 
-// Refresh aggiorna la lista dei clienti
-func (m *ClientiModel) Refresh() {
-	list, _ := m.db.ListClienti()
+// Refresh aggiorna la lista dei fornitori
+func (m *FornitoriModel) Refresh() {
+	list, _ := m.db.ListFornitori()
 	rows := []table.Row{}
 
-	for _, c := range list {
+	for _, f := range list {
 		rows = append(rows, table.Row{
-			fmt.Sprintf("%d", c.ID),
-			utils.Truncate(c.RagioneSociale, 35),
-			c.Telefono,
-			utils.Truncate(c.Email, 25),
+			fmt.Sprintf("%d", f.ID),
+			utils.Truncate(f.RagioneSociale, 35),
+			f.Telefono,
+			utils.Truncate(f.Email, 25),
 		})
 	}
 
 	m.table.SetRows(rows)
 }
 
-// countDataForCliente conta veicoli, commesse e movimenti associati a un cliente
-func (m *ClientiModel) countDataForCliente(clienteID int) (int, int, int, float64) {
-	veicoli, _ := m.db.ListVeicoli()
-	commesse, _ := m.db.ListCommesse()
+// countDataForFornitore conta movimenti associati a un fornitore
+func (m *FornitoriModel) countDataForFornitore(fornitoreID int) (int, float64) {
 	movimenti, _ := m.db.ListMovimenti()
-
-	numVeicoli := 0
-	veicoliIDs := make(map[int]bool)
-	for _, v := range veicoli {
-		if v.ClienteID == clienteID {
-			numVeicoli++
-			veicoliIDs[v.ID] = true
-		}
-	}
-
-	numCommesse := 0
-	commesseIDs := make(map[int]bool)
-	for _, c := range commesse {
-		if veicoliIDs[c.VeicoloID] {
-			numCommesse++
-			commesseIDs[c.ID] = true
-		}
-	}
 
 	numMovimenti := 0
 	totaleMov := 0.0
 	for _, mov := range movimenti {
-		if commesseIDs[mov.CommessaID] {
+		if mov.FornitoreID == fornitoreID {
 			numMovimenti++
-			if mov.Tipo == "Entrata" {
+			if mov.Tipo == "Uscita" {
 				totaleMov += mov.Importo
 			}
 		}
 	}
 
-	return numVeicoli, numCommesse, numMovimenti, totaleMov
+	return numMovimenti, totaleMov
 }
 
 // resetForm resetta il form ai valori predefiniti
-func (m *ClientiModel) resetForm() {
+func (m *FornitoriModel) resetForm() {
 	for i := range m.inputs {
 		m.inputs[i].SetValue("")
 	}
@@ -187,26 +165,26 @@ func (m *ClientiModel) resetForm() {
 	m.inputs[0].Focus()
 }
 
-// loadIntoForm carica un cliente nel form
-func (m *ClientiModel) loadIntoForm(id int) {
-	c, err := m.db.GetCliente(id)
+// loadIntoForm carica un fornitore nel form
+func (m *FornitoriModel) loadIntoForm(id int) {
+	f, err := m.db.GetFornitore(id)
 	if err != nil {
-		m.err = fmt.Errorf("errore caricamento cliente: %w", err)
+		m.err = fmt.Errorf("errore caricamento fornitore: %w", err)
 		return
 	}
 
 	m.selectedID = id
-	m.inputs[0].SetValue(c.RagioneSociale)
-	m.inputs[1].SetValue(c.Telefono)
-	m.inputs[2].SetValue(c.Email)
-	m.inputs[3].SetValue(c.PEC)
-	m.inputs[4].SetValue(c.CodiceFiscale)
-	m.inputs[5].SetValue(c.PartitaIVA)
-	m.inputs[6].SetValue(c.CodiceDestinatario)
-	m.inputs[7].SetValue(c.Indirizzo)
-	m.inputs[8].SetValue(c.CAP)
-	m.inputs[9].SetValue(c.Citta)
-	m.inputs[10].SetValue(c.Provincia)
+	m.inputs[0].SetValue(f.RagioneSociale)
+	m.inputs[1].SetValue(f.Telefono)
+	m.inputs[2].SetValue(f.Email)
+	m.inputs[3].SetValue(f.PEC)
+	m.inputs[4].SetValue(f.CodiceFiscale)
+	m.inputs[5].SetValue(f.PartitaIVA)
+	m.inputs[6].SetValue(f.CodiceDestinatario)
+	m.inputs[7].SetValue(f.Indirizzo)
+	m.inputs[8].SetValue(f.CAP)
+	m.inputs[9].SetValue(f.Citta)
+	m.inputs[10].SetValue(f.Provincia)
 
 	m.focusIndex = 0
 	m.err = nil
@@ -215,7 +193,7 @@ func (m *ClientiModel) loadIntoForm(id int) {
 }
 
 // updateFocus aggiorna il focus tra i campi
-func (m *ClientiModel) updateFocus() {
+func (m *FornitoriModel) updateFocus() {
 	for i := range m.inputs {
 		if i == m.focusIndex {
 			m.inputs[i].Focus()
@@ -226,7 +204,7 @@ func (m *ClientiModel) updateFocus() {
 }
 
 // validate valida i dati del form
-func (m *ClientiModel) validate() error {
+func (m *FornitoriModel) validate() error {
 	if err := utils.ValidateNotEmpty(m.inputs[0].Value(), "Ragione Sociale"); err != nil {
 		return err
 	}
@@ -254,13 +232,13 @@ func (m *ClientiModel) validate() error {
 	return nil
 }
 
-// save salva il cliente corrente
-func (m *ClientiModel) save() error {
+// save salva il fornitore corrente
+func (m *FornitoriModel) save() error {
 	if err := m.validate(); err != nil {
 		return err
 	}
 
-	c := &database.Cliente{
+	f := &database.Fornitore{
 		RagioneSociale:     m.inputs[0].Value(),
 		Telefono:           m.inputs[1].Value(),
 		Email:              m.inputs[2].Value(),
@@ -274,31 +252,31 @@ func (m *ClientiModel) save() error {
 		Provincia:          strings.ToUpper(m.inputs[10].Value()),
 	}
 
-	if m.mode == ClAdd {
-		if err := m.db.CreateCliente(c); err != nil {
+	if m.mode == FornAdd {
+		if err := m.db.CreateFornitore(f); err != nil {
 			return fmt.Errorf("errore creazione: %w", err)
 		}
-		m.msg = "✓ Cliente creato con successo"
+		m.msg = "✓ Fornitore creato con successo"
 	} else {
-		c.ID = m.selectedID
-		if err := m.db.UpdateCliente(c); err != nil {
+		f.ID = m.selectedID
+		if err := m.db.UpdateFornitore(f); err != nil {
 			return fmt.Errorf("errore aggiornamento: %w", err)
 		}
-		m.msg = "✓ Cliente aggiornato con successo"
+		m.msg = "✓ Fornitore aggiornato con successo"
 	}
 
-	m.mode = ClList
+	m.mode = FornList
 	m.Refresh()
 	return nil
 }
 
 // Init implementa tea.Model
-func (m ClientiModel) Init() tea.Cmd {
+func (m FornitoriModel) Init() tea.Cmd {
 	return nil
 }
 
 // Update implementa tea.Model
-func (m ClientiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m FornitoriModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
 	if msg, ok := msg.(tea.WindowSizeMsg); ok {
@@ -311,22 +289,18 @@ func (m ClientiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if k, ok := msg.(tea.KeyMsg); ok {
 			switch k.String() {
 			case "y", "Y":
-				if err := m.db.DeleteCliente(m.deletingID); err != nil {
+				if err := m.db.DeleteFornitore(m.deletingID); err != nil {
 					m.err = fmt.Errorf("errore eliminazione: %w", err)
 				} else {
-					m.msg = fmt.Sprintf("✓ Cliente, %d veicoli, %d commesse e %d movimenti eliminati",
-						m.deleteWarningVeicoli, m.deleteWarningCommesse, m.deleteWarningMovimenti)
+					m.msg = fmt.Sprintf("✓ Fornitore e %d movimenti eliminati",
+						m.deleteWarningMovimenti)
 				}
 				m.Refresh()
 				m.showConfirm = false
-				m.deleteWarningVeicoli = 0
-				m.deleteWarningCommesse = 0
 				m.deleteWarningMovimenti = 0
 				m.deleteWarningTotale = 0
 			case "n", "N", "esc":
 				m.showConfirm = false
-				m.deleteWarningVeicoli = 0
-				m.deleteWarningCommesse = 0
 				m.deleteWarningMovimenti = 0
 				m.deleteWarningTotale = 0
 			}
@@ -335,8 +309,8 @@ func (m ClientiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	if k, ok := msg.(tea.KeyMsg); ok && k.String() == "esc" {
-		if m.mode != ClList {
-			m.mode = ClList
+		if m.mode != FornList {
+			m.mode = FornList
 			m.err = nil
 			m.msg = ""
 			return m, nil
@@ -344,28 +318,26 @@ func (m ClientiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, func() tea.Msg { return ChangeScreenMsg(StateMenu) }
 	}
 
-	if m.mode == ClList {
+	if m.mode == FornList {
 		switch msg := msg.(type) {
 		case tea.KeyMsg:
 			switch msg.String() {
 			case "n":
-				m.mode = ClAdd
+				m.mode = FornAdd
 				m.resetForm()
 				return m, nil
 			case "e", "enter":
 				if row := m.table.SelectedRow(); len(row) > 0 {
 					id, _ := strconv.Atoi(row[0])
 					m.loadIntoForm(id)
-					m.mode = ClEdit
+					m.mode = FornEdit
 				}
 				return m, nil
 			case "x", "d":
 				if row := m.table.SelectedRow(); len(row) > 0 {
 					id, _ := strconv.Atoi(row[0])
 					m.deletingID = id
-					numVeicoli, numCommesse, numMovimenti, totaleMov := m.countDataForCliente(id)
-					m.deleteWarningVeicoli = numVeicoli
-					m.deleteWarningCommesse = numCommesse
+					numMovimenti, totaleMov := m.countDataForFornitore(id)
 					m.deleteWarningMovimenti = numMovimenti
 					m.deleteWarningTotale = totaleMov
 					m.showConfirm = true
@@ -377,7 +349,7 @@ func (m ClientiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 
-	if m.mode == ClAdd || m.mode == ClEdit {
+	if m.mode == FornAdd || m.mode == FornEdit {
 		if k, ok := msg.(tea.KeyMsg); ok {
 			switch k.String() {
 			case "enter":
@@ -426,32 +398,28 @@ func (m ClientiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 // renderDeleteConfirmation renderizza il dialog di conferma eliminazione con avviso
-func (m ClientiModel) renderDeleteConfirmation(width int) string {
+func (m FornitoriModel) renderDeleteConfirmation(width int) string {
 	var message strings.Builder
-	c, _ := m.db.GetCliente(m.deletingID)
+	f, _ := m.db.GetFornitore(m.deletingID)
 	nome := "???"
-	if c != nil {
-		nome = c.RagioneSociale
+	if f != nil {
+		nome = f.RagioneSociale
 	}
 
-	message.WriteString(fmt.Sprintf("⚠️  ELIMINAZIONE CLIENTE #%d\n", m.deletingID))
+	message.WriteString(fmt.Sprintf("⚠️  ELIMINAZIONE FORNITORE #%d\n", m.deletingID))
 	message.WriteString(fmt.Sprintf("%s\n\n", nome))
 
-	if m.deleteWarningVeicoli > 0 || m.deleteWarningCommesse > 0 {
+	if m.deleteWarningMovimenti > 0 {
 		message.WriteString(ErrorStyle.Render(fmt.Sprintf(
-			"ATTENZIONE: Questo cliente ha dati associati!\n\n"+
-				"Eliminando il cliente verranno eliminati:\n"+
-				" • %d veicoli\n"+
-				" • %d commesse\n"+
+			"ATTENZIONE: Questo fornitore ha dati associati!\n\n"+
+				"Eliminando il fornitore verranno eliminati:\n"+
 				" • %d movimenti di Prima Nota (totale: %s)\n\n"+
 				"TUTTI I DATI VERRANNO PERSI IN MODO PERMANENTE!\n\n",
-			m.deleteWarningVeicoli,
-			m.deleteWarningCommesse,
 			m.deleteWarningMovimenti,
 			utils.FormatEuro(m.deleteWarningTotale),
 		)))
 	} else {
-		message.WriteString("Questo cliente non ha veicoli, commesse o movimenti associati.\n\n")
+		message.WriteString("Questo fornitore non ha movimenti associati.\n\n")
 	}
 
 	message.WriteString(WarningStyle.Render("Sei sicuro di voler procedere?\n"))
@@ -472,7 +440,7 @@ func (m ClientiModel) renderDeleteConfirmation(width int) string {
 }
 
 // View implementa tea.Model
-func (m ClientiModel) View() string {
+func (m FornitoriModel) View() string {
 	width := 85
 	if m.width > 0 {
 		width = min(m.width, 100)
@@ -482,17 +450,17 @@ func (m ClientiModel) View() string {
 		return m.renderDeleteConfirmation(width)
 	}
 
-	title := "GESTIONE CLIENTI"
-	if m.mode == ClAdd {
-		title = "NUOVO CLIENTE"
-	} else if m.mode == ClEdit {
-		title = fmt.Sprintf("MODIFICA CLIENTE #%d", m.selectedID)
+	title := "GESTIONE FORNITORI"
+	if m.mode == FornAdd {
+		title = "NUOVO FORNITORE"
+	} else if m.mode == FornEdit {
+		title = fmt.Sprintf("MODIFICA FORNITORE #%d", m.selectedID)
 	}
 
 	header := RenderHeader(title, width)
 	var body string
 
-	if m.mode == ClList {
+	if m.mode == FornList {
 		helpText := lipgloss.NewStyle().
 			MarginBottom(1).
 			Foreground(ColorSubText).
@@ -506,7 +474,7 @@ func (m ClientiModel) View() string {
 	} else {
 		var form strings.Builder
 		labels := []string{
-			"Ragione Sociale/N.C.", "Telefono", "Email",
+			"Ragione Sociale", "Telefono", "Email",
 			"PEC", "Cod. Fiscale", "P.IVA", "SDI",
 			"Indirizzo", "CAP", "Città", "Provincia",
 		}
