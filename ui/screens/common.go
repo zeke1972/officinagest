@@ -1,6 +1,8 @@
 package screens
 
 import (
+	ui "officina/ui"
+
 	"github.com/charmbracelet/bubbles/table"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -24,78 +26,19 @@ const (
 // ChangeScreenMsg è il messaggio per cambiare schermata
 type ChangeScreenMsg AppState
 
-// Colori e stili globali
-var (
-	ColorPrimary   = lipgloss.Color("#00D9FF")
-	ColorSecondary = lipgloss.Color("#7D56F4")
-	ColorSuccess   = lipgloss.Color("#04B575")
-	ColorError     = lipgloss.Color("#FF0040")
-	ColorWarning   = lipgloss.Color("#FFB86C")
-	ColorHighlight = lipgloss.Color("#BD93F9")
-	ColorText      = lipgloss.Color("#FAFAFA")
-	ColorSubText   = lipgloss.Color("#626262")
-	ColorBorder    = lipgloss.Color("#383838")
-	ColorBgDark    = lipgloss.Color("#1A1A1A")
-	ColorBgLight   = lipgloss.Color("#2D2D2D")
-)
-
-// Stili comuni
-var (
-	TitleStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(ColorPrimary).
-			Background(ColorBgDark).
-			Padding(0, 1)
-
-	SubtitleStyle = lipgloss.NewStyle().
-			Foreground(ColorSecondary).
-			Italic(true)
-
-	SuccessStyle = lipgloss.NewStyle().
-			Foreground(ColorSuccess).
-			Bold(true)
-
-	ErrorStyle = lipgloss.NewStyle().
-			Foreground(ColorError).
-			Bold(true)
-
-	WarningStyle = lipgloss.NewStyle().
-			Foreground(ColorWarning).
-			Bold(true)
-
-	HelpStyle = lipgloss.NewStyle().
-			Foreground(ColorSubText)
-
-	MainBoxStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(ColorBorder).
-			Padding(1, 2)
-
-	LabelStyle = lipgloss.NewStyle().
-			Foreground(ColorSubText).
-			Width(25).
-			Align(lipgloss.Right)
-
-	LabelFocusedStyle = lipgloss.NewStyle().
-				Foreground(ColorPrimary).
-				Bold(true).
-				Width(25).
-				Align(lipgloss.Right)
-)
-
 // GetTableStyles restituisce gli stili per la tabella
 func GetTableStyles() table.Styles {
 	s := table.DefaultStyles()
 	s.Header = s.Header.
 		BorderStyle(lipgloss.NormalBorder()).
-		BorderForeground(ColorBorder).
+		BorderForeground(ui.ColorBorder).
 		BorderBottom(true).
 		Bold(true).
-		Foreground(ColorPrimary)
+		Foreground(ui.ColorPrimary)
 
 	s.Selected = s.Selected.
-		Foreground(ColorText).
-		Background(ColorPrimary).
+		Foreground(ui.ColorText).
+		Background(ui.ColorPrimary).
 		Bold(false)
 
 	return s
@@ -104,7 +47,7 @@ func GetTableStyles() table.Styles {
 // RenderHeader renderizza l'header comune
 func RenderHeader(title string, width int) string {
 	titleBar := lipgloss.NewStyle().
-		Background(ColorPrimary).
+		Background(ui.ColorPrimary).
 		Foreground(lipgloss.Color("#000000")).
 		Bold(true).
 		Padding(0, 2).
@@ -115,13 +58,12 @@ func RenderHeader(title string, width int) string {
 	return titleBar
 }
 
-// RenderFooter renderizza il footer comune
-func RenderFooter(width int) string {
-	footer := lipgloss.NewStyle().
-		Foreground(ColorSubText).
+// RenderFooter renderizza il footer comone
+func RenderFooter(width int, version string) string {
+	footer := ui.FooterStyle.
 		Width(width).
 		Align(lipgloss.Center).
-		Render("Officina Management System v1.0 • [Q] Esci • [ESC] Indietro")
+		Render("Officina Management System " + version + " • [Q] Esci • [ESC] Indietro")
 
 	return footer
 }
@@ -139,42 +81,22 @@ func CenterContent(termWidth, termHeight int, content string) string {
 
 // InfoBadge crea un badge informativo
 func InfoBadge(text string) string {
-	return lipgloss.NewStyle().
-		Background(ColorHighlight).
-		Foreground(lipgloss.Color("#000000")).
-		Bold(true).
-		Padding(0, 1).
-		Render(text)
+	return ui.InfoBadge.Render(text)
 }
 
 // WarningBadge crea un badge di warning
 func WarningBadge(text string) string {
-	return lipgloss.NewStyle().
-		Background(ColorWarning).
-		Foreground(lipgloss.Color("#000000")).
-		Bold(true).
-		Padding(0, 1).
-		Render(text)
+	return ui.WarningBadge.Render(text)
 }
 
 // SuccessBadge crea un badge di successo
 func SuccessBadge(text string) string {
-	return lipgloss.NewStyle().
-		Background(ColorSuccess).
-		Foreground(lipgloss.Color("#000000")).
-		Bold(true).
-		Padding(0, 1).
-		Render(text)
+	return ui.SuccessBadge.Render(text)
 }
 
 // ErrorBadge crea un badge di errore
 func ErrorBadge(text string) string {
-	return lipgloss.NewStyle().
-		Background(ColorError).
-		Foreground(lipgloss.Color("#FFFFFF")).
-		Bold(true).
-		Padding(0, 1).
-		Render(text)
+	return ui.ErrorBadge.Render(text)
 }
 
 // min restituisce il minimo tra due interi
